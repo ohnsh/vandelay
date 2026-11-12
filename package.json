@@ -1,0 +1,21 @@
+{
+  "name": "did",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "bun": ">=1.3.0" },
+  "bin": { "did": "src/cli.ts" },
+  "scripts": {
+    "did": "bun src/cli.ts",
+    "check": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
+    "commander": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0",
+    "typescript": "^5.9.3"
+  }
+}
