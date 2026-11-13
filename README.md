@@ -98,6 +98,11 @@ one timezone per date; a conflicting scope is rejected.
    belong to their capture day. Whole segments may contain footage outside the day.
    Screenshot `file_path` is replaced by a `media` object with SHA-256, byte size,
    and an archive-relative location (or an explicit unavailability status).
+   Screenshots also include sorted, unique `batch_ids` (empty when unassociated),
+   both in record `data` and in evidence. Join these to observation `data.batch_id`
+   to identify shared analysis inputs; this is batch membership, not direct
+   observation-to-frame attribution. Original junction rows remain in evidence,
+   including associations for out-of-day whole-segment frames.
    AI interpretations remain attributed to Dayflow.
 - **VOD filesystem:** reads `YYYY-MM/DD/_camera/file.{mp4,mov,m4a,opus}`.
   `--vod-config` supports timezone, source timing rules, timelapse wall duration,

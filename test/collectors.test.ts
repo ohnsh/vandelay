@@ -100,21 +100,26 @@ test('Dayflow archives frames, preserves batch inputs, and retains immutable rev
     CREATE TABLE analysis_batches(id INTEGER, status TEXT);`);
   const start = seconds(instant(bounds.start)), end = seconds(instant(bounds.end));
   db.run('INSERT INTO observations VALUES (1,7,?,?)', [start, start+10]);
-  db.run("INSERT INTO analysis_batches VALUES (7,'complete')");
+  db.run("INSERT INTO analysis_batches VALUES (7,'complete'),(8,'complete'),(9,'complete')");
   for (const [id, time, file, index, size] of [
     [1, start, video, 0, 8], [2, start+5, video, 1, 8], [3, start-5, video, 2, 8],
     [4, start+10, pending, 0, null], [5, start+15, join(source, 'gone.mp4'), 0, 8],
     [6, end, video, 3, 8],
   ] as const) db.run('INSERT INTO screenshots VALUES (?,?,?,?,?,42)', [id, time, file, index, size]);
-  db.run('INSERT INTO batch_screenshots VALUES (7,1),(7,3)');
+  db.run('INSERT INTO batch_screenshots VALUES (8,1),(7,1),(7,3),(9,6)');
   try {
     const first = collectors.dayflow(bounds, path, archive), evidence = first.evidence as any;
     expect(first.records.filter(r => r.kind === 'dayflow.screenshots')).toHaveLength(4);
     expect(evidence.screenshots).toHaveLength(6);
-    expect(evidence.batch_screenshots).toHaveLength(2);
-    expect(evidence.analysis_batches[0].id).toBe(7);
+    expect(evidence.batch_screenshots).toHaveLength(4);
+    expect(evidence.analysis_batches.map((r: any) => r.id)).toEqual([7, 8, 9]);
+    expect(evidence.screenshots.find((r: any) => r.id === 6).batch_ids).toEqual([9]);
+    expect(first.records.some(r => r.id === 'screenshots:6')).toBe(false);
+    expect((first.records.find(r => r.id === 'screenshots:1')!.data as any).batch_ids).toEqual([7, 8]);
+    expect((first.records.find(r => r.id === 'screenshots:2')!.data as any).batch_ids).toEqual([]);
     const frame = evidence.screenshots.find((r: any) => r.id === 1);
     expect(frame.file_path).toBeUndefined();
+    expect(frame.batch_ids).toEqual([7, 8]);
     expect(frame.idle_seconds_at_capture).toBe(42);
     expect(frame.media.sha256).toBe(digest('original'));
     const oldPath = join(archive, frame.media.location.path);

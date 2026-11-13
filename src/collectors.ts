@@ -114,15 +114,22 @@ export function dayflow(bounds: Scope, path: string, mediaArchive = defaultMedia
         if (!screenshot) throw new Error(`Missing Dayflow screenshot row: ${link.screenshot_id}`);
         screenshots.push(screenshot); selectedIDs.add(screenshot.id);
       }
-      evidence.batch_screenshots = selectedLinks;
-      evidence.analysis_batches = available.has('analysis_batches')
-        ? [...batchIDs].sort((a, b) => a - b).flatMap(id => rows(db, 'SELECT * FROM analysis_batches WHERE id = ?', [id])) : [];
       // Whole segments are archived, so preserve their complete available frame maps.
       for (const file of new Set(screenshots.map(row => row.file_path))) {
         for (const row of rows(db, 'SELECT * FROM screenshots WHERE file_path = ? ORDER BY captured_at,id', [file])) {
           if (!selectedIDs.has(row.id)) { screenshots.push(row); selectedIDs.add(row.id); }
         }
       }
+      const screenshotBatches = new Map<number, Set<number>>();
+      evidence.batch_screenshots = links.filter(link => selectedIDs.has(link.screenshot_id));
+      for (const link of evidence.batch_screenshots as Row[]) {
+        let ids = screenshotBatches.get(link.screenshot_id);
+        if (!ids) { ids = new Set(); screenshotBatches.set(link.screenshot_id, ids); }
+        ids.add(link.batch_id);
+        batchIDs.add(link.batch_id);
+      }
+      evidence.analysis_batches = available.has('analysis_batches')
+        ? [...batchIDs].sort((a, b) => a - b).flatMap(id => rows(db, 'SELECT * FROM analysis_batches WHERE id = ?', [id])) : [];
       const media = new Map<string, Media | { availability: string }>();
       evidence.screenshots = screenshots.sort((a, b) => a.captured_at - b.captured_at || a.id - b.id).map(row => {
         const { file_path, ...fields } = row;
@@ -138,7 +145,7 @@ export function dayflow(bounds: Scope, path: string, mediaArchive = defaultMedia
             : archiveMedia(source, root));
         }
         const asset = media.get(file_path)!;
-        const saved = { ...fields, media: asset };
+        const saved = { ...fields, batch_ids: [...(screenshotBatches.get(row.id) ?? [])].sort((a, b) => a - b), media: asset };
         const r = record(`screenshots:${row.id}`, 'dayflow.screenshots', epoch(row.captured_at), epoch(row.captured_at), bounds,
           '', '', { evidence: { file: 'evidence.json', table: 'screenshots', id: row.id }, data: saved,
             ...('sha256' in asset ? { media: [asset] } : {}) });
