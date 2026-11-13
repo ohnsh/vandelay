@@ -1,7 +1,9 @@
 import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { command } from './io.ts';
+import { archiveMedia, archiveRoot, defaultMediaArchive } from './media-archive.ts';
 import { addSeconds, clip, compare, encode, epoch, expand, fileHash, instant, localInstant, record, safePath, seconds, Temporal,
   type ActivityRecord, type Collected, type Media, type Scope } from './model.ts';
 
@@ -66,7 +68,7 @@ export async function activitywatch(bounds: Scope, host: string, base = 'http://
   return { ...result(records, { buckets }, exported ? 'aw-export' : 'aw-http',
     ['Buckets are not a server-wide atomic snapshot; absence is not proof of inactivity.'], { host }), observations };
 }
-export function dayflow(bounds: Scope, path: string): Collected {
+export function dayflow(bounds: Scope, path: string, mediaArchive = defaultMediaArchive): Collected {
   const db = sqliteRead(path), records: ActivityRecord[] = [], evidence: Record<string, unknown> = {};
   try {
     const lo = seconds(instant(bounds.start)), hi = seconds(instant(bounds.end));
@@ -92,9 +94,62 @@ export function dayflow(bounds: Scope, path: string): Collected {
       }
     }
     evidence.daily_standup_entries = reports;
-    evidence.schema = rows(db, "SELECT name,sql FROM sqlite_master WHERE type='table' AND name IN ('timeline_cards','observations','daily_standup_entries') ORDER BY name");
+    const tables = ['timeline_cards', 'observations', 'daily_standup_entries', 'screenshots', 'batch_screenshots', 'analysis_batches'];
+    evidence.schema = rows(db, `SELECT name,sql FROM sqlite_master WHERE type='table' AND name IN (${tables.map(() => '?').join(',')}) ORDER BY name`, tables);
+    const available = new Set((evidence.schema as Row[]).map(row => row.name));
+    if (available.has('screenshots')) {
+      const root = archiveRoot(mediaArchive, dirname(expand(path)));
+      const batchIDs = new Set<number>();
+      for (const table of ['timeline_cards', 'observations']) {
+        for (const row of evidence[table] as Row[]) if (row.batch_id != null) batchIDs.add(row.batch_id);
+      }
+      const screenshots = rows(db, 'SELECT * FROM screenshots WHERE captured_at >= ? AND captured_at < ? ORDER BY captured_at,id', [lo, hi]);
+      const selectedIDs = new Set(screenshots.map(row => row.id));
+      const links = available.has('batch_screenshots') ? rows(db, 'SELECT * FROM batch_screenshots ORDER BY batch_id,screenshot_id') : [];
+      for (const link of links) if (selectedIDs.has(link.screenshot_id)) batchIDs.add(link.batch_id);
+      const selectedLinks = links.filter(link => batchIDs.has(link.batch_id));
+      for (const link of selectedLinks) {
+        if (selectedIDs.has(link.screenshot_id)) continue;
+        const screenshot = rows(db, 'SELECT * FROM screenshots WHERE id = ?', [link.screenshot_id])[0];
+        if (!screenshot) throw new Error(`Missing Dayflow screenshot row: ${link.screenshot_id}`);
+        screenshots.push(screenshot); selectedIDs.add(screenshot.id);
+      }
+      evidence.batch_screenshots = selectedLinks;
+      evidence.analysis_batches = available.has('analysis_batches')
+        ? [...batchIDs].sort((a, b) => a - b).flatMap(id => rows(db, 'SELECT * FROM analysis_batches WHERE id = ?', [id])) : [];
+      // Whole segments are archived, so preserve their complete available frame maps.
+      for (const file of new Set(screenshots.map(row => row.file_path))) {
+        for (const row of rows(db, 'SELECT * FROM screenshots WHERE file_path = ? ORDER BY captured_at,id', [file])) {
+          if (!selectedIDs.has(row.id)) { screenshots.push(row); selectedIDs.add(row.id); }
+        }
+      }
+      const media = new Map<string, Media | { availability: string }>();
+      evidence.screenshots = screenshots.sort((a, b) => a.captured_at - b.captured_at || a.id - b.id).map(row => {
+        const { file_path, ...fields } = row;
+        if (typeof file_path !== 'string' || !file_path) throw new Error('Invalid Dayflow screenshot file_path');
+        if (!media.has(file_path)) {
+          const source = file_path.startsWith('file:') ? fileURLToPath(file_path) : expand(file_path);
+          // FrameStore sets file_size only after finalizing a segment. Check all its rows,
+          // including captures outside this day, before attempting a copy.
+          const pending = row.frame_index != null && rows(db,
+            'SELECT id FROM screenshots WHERE file_path = ? AND file_size IS NULL LIMIT 1', [file_path]).length > 0;
+          media.set(file_path, !existsSync(source) ? { availability: 'missing' }
+            : pending ? { availability: 'pending-finalization' }
+            : archiveMedia(source, root));
+        }
+        const asset = media.get(file_path)!;
+        const saved = { ...fields, media: asset };
+        const r = record(`screenshots:${row.id}`, 'dayflow.screenshots', epoch(row.captured_at), epoch(row.captured_at), bounds,
+          '', '', { evidence: { file: 'evidence.json', table: 'screenshots', id: row.id }, data: saved,
+            ...('sha256' in asset ? { media: [asset] } : {}) });
+        if (r) records.push(r);
+        return saved;
+      });
+    }
     return result(records, evidence, 'sqlite-read-transaction', [
-      'Selected rows only; media paths are source claims, not retained media.',
+      'Screenshot file_path is replaced by an archive-relative SHA-256 media reference or explicit unavailability; native schemas describe the source rows.',
+      'Batch inputs and whole-segment frame maps can fall outside the day. Capture timestamps, not MP4 duration, establish wall time.',
+      'Pending segments and missing media are not copied; recollect after finalization. SQLite and media are not a single atomic snapshot.',
       'AI interpretations remain attributed to Dayflow; deleted cards are retained only as evidence.',
     ]);
   } finally { db.close(); }

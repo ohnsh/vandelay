@@ -2,6 +2,7 @@
 import { Argument, Command, InvalidArgumentError, Option } from 'commander';
 import { readFileSync } from 'node:fs';
 import * as collectors from './collectors.ts';
+import { defaultMediaArchive } from './media-archive.ts';
 import { encode, expand, scope, type Source } from './model.ts';
 import { Repository, type TimestampAction } from './repository.ts';
 
@@ -26,6 +27,7 @@ export function program(): Command {
     .option('--aw-host <host>').option('--aw-url <url>', 'ActivityWatch root URL', 'http://localhost:5600')
     .option('--aw-export <file>', 'AW JSON export instead of live HTTP')
     .option('--dayflow-db <path>', 'Dayflow SQLite database', '~/Library/Application Support/Dayflow/chunks.sqlite')
+    .option('--media-archive <path>', 'permanent Dayflow media archive outside Git and Dayflow', defaultMediaArchive)
     .option('--vod-root <path>', 'local media archive root').option('--vod-db <path>', 'VOD SQLite snapshot')
     .option('--vod-config <path>', 'VOD JSON config for filesystem mode')
     .option('--camera <name>', 'select a camera; repeatable', append, [])
@@ -37,7 +39,7 @@ export function program(): Command {
       if (source === 'activitywatch') {
         if (!o.awHost) throw new Error('--aw-host is required (independent of --instance)');
         collected = await collectors.activitywatch(bounds, o.awHost, o.awUrl, o.awExport);
-      } else if (source === 'dayflow') collected = collectors.dayflow(bounds, o.dayflowDb);
+      } else if (source === 'dayflow') collected = collectors.dayflow(bounds, o.dayflowDb, o.mediaArchive);
       else if (o.vodDb) collected = collectors.vodDatabase(bounds, o.vodDb, o.vodRoot, o.camera);
       else {
         if (!o.vodRoot || !o.vodConfig) throw new Error('Filesystem VOD collection requires --vod-root and --vod-config');

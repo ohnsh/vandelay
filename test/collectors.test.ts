@@ -1,7 +1,7 @@
 // Collector regression cases adapted from ../vandelay/test/archive.test.ts.
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as collectors from '../src/collectors.ts';
@@ -84,6 +84,55 @@ test('VOD filesystem retains midnight overlaps, media hashes and timelapse durat
   expect(() => collectors.vodFiles(bounds, media, { timezone: bounds.timezone }, [], 1, file => {
     write(file, 'modified'); return { format: { duration: '120' } };
   })).toThrow('changed during probing');
+});
+
+test('Dayflow archives frames, preserves batch inputs, and retains immutable revisions', () => {
+  const source = join(root, 'Dayflow'), archive = join(root, 'archive');
+  mkdirSync(source);
+  const path = join(source, 'chunks.sqlite'), db = new Database(path);
+  const video = join(source, 'recordings', 'segment.mp4'), pending = join(source, 'recordings', 'pending.mp4');
+  write(video, 'original'); write(pending, 'unfinished');
+  db.run(`CREATE TABLE timeline_cards(id INTEGER, batch_id INTEGER, start_ts INTEGER, end_ts INTEGER);
+    CREATE TABLE observations(id INTEGER, batch_id INTEGER, start_ts INTEGER, end_ts INTEGER);
+    CREATE TABLE daily_standup_entries(standup_day TEXT, payload_json TEXT);
+    CREATE TABLE screenshots(id INTEGER, captured_at INTEGER, file_path TEXT, frame_index INTEGER, file_size INTEGER, idle_seconds_at_capture INTEGER);
+    CREATE TABLE batch_screenshots(batch_id INTEGER, screenshot_id INTEGER);
+    CREATE TABLE analysis_batches(id INTEGER, status TEXT);`);
+  const start = seconds(instant(bounds.start)), end = seconds(instant(bounds.end));
+  db.run('INSERT INTO observations VALUES (1,7,?,?)', [start, start+10]);
+  db.run("INSERT INTO analysis_batches VALUES (7,'complete')");
+  for (const [id, time, file, index, size] of [
+    [1, start, video, 0, 8], [2, start+5, video, 1, 8], [3, start-5, video, 2, 8],
+    [4, start+10, pending, 0, null], [5, start+15, join(source, 'gone.mp4'), 0, 8],
+    [6, end, video, 3, 8],
+  ] as const) db.run('INSERT INTO screenshots VALUES (?,?,?,?,?,42)', [id, time, file, index, size]);
+  db.run('INSERT INTO batch_screenshots VALUES (7,1),(7,3)');
+  try {
+    const first = collectors.dayflow(bounds, path, archive), evidence = first.evidence as any;
+    expect(first.records.filter(r => r.kind === 'dayflow.screenshots')).toHaveLength(4);
+    expect(evidence.screenshots).toHaveLength(6);
+    expect(evidence.batch_screenshots).toHaveLength(2);
+    expect(evidence.analysis_batches[0].id).toBe(7);
+    const frame = evidence.screenshots.find((r: any) => r.id === 1);
+    expect(frame.file_path).toBeUndefined();
+    expect(frame.idle_seconds_at_capture).toBe(42);
+    expect(frame.media.sha256).toBe(digest('original'));
+    const oldPath = join(archive, frame.media.location.path);
+    expect(readFileSync(oldPath, 'utf8')).toBe('original');
+    expect(evidence.screenshots.find((r: any) => r.id === 4).media.availability).toBe('pending-finalization');
+    expect(evidence.screenshots.find((r: any) => r.id === 5).media.availability).toBe('missing');
+    expect(collectors.dayflow(bounds, path, archive)).toEqual(first);
+    write(video, 'changed');
+    const second = collectors.dayflow(bounds, path, archive).evidence as any;
+    expect(second.screenshots.find((r: any) => r.id === 1).media.sha256).toBe(digest('changed'));
+    expect(readFileSync(oldPath, 'utf8')).toBe('original');
+    write(join(archive, second.screenshots.find((r: any) => r.id === 1).media.location.path), 'corrupt');
+    expect(() => collectors.dayflow(bounds, path, archive)).toThrow('Corrupt archive object');
+    expect(() => collectors.dayflow(bounds, path, join(source, 'archive'))).toThrow('outside the Dayflow');
+    const git = join(root, 'git'); mkdirSync(join(git, '.git'), { recursive: true });
+    expect(() => collectors.dayflow(bounds, path, join(git, 'archive'))).toThrow('outside Git');
+    expect(existsSync(pending)).toBe(true);
+  } finally { db.close(); }
 });
 
 test('VOD catalog hashes are claims until local bytes are checked; unsafe integers fail', () => {

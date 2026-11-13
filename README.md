@@ -61,7 +61,8 @@ bun run did collect activitywatch \
   --aw-host mak.local
 
 bun run did collect dayflow \
-  --day 2026-11-12 --timezone America/Chicago --instance mak
+  --day 2026-11-12 --timezone America/Chicago --instance mak \
+  --media-archive ~/.local/share/did/media
 
 bun run did collect vod \
   --day 2026-11-12 --timezone America/Chicago --instance media-days \
@@ -91,8 +92,13 @@ one timezone per date; a conflicting scope is rejected.
   `~/Library/Application Support/Dayflow/chunks.sqlite`. One read-only SQLite
   transaction reads committed WAL data, preserves deleted cards as evidence,
   and includes reports associated by report date or `generation.sourceDay`.
-  Native selected rows and schemas are retained. Screenshot/video files are not
-  copied. AI interpretations remain attributed to Dayflow.
+   Selected rows and schemas are retained, along with screenshots, related analysis
+   batches, and their screenshot associations. Batch inputs and whole-segment frame
+   maps outside the day are included as evidence; screenshot activity records
+   belong to their capture day. Whole segments may contain footage outside the day.
+   Screenshot `file_path` is replaced by a `media` object with SHA-256, byte size,
+   and an archive-relative location (or an explicit unavailability status).
+   AI interpretations remain attributed to Dayflow.
 - **VOD filesystem:** reads `YYYY-MM/DD/_camera/file.{mp4,mov,m4a,opus}`.
   `--vod-config` supports timezone, source timing rules, timelapse wall duration,
   and per-object timestamp overrides as in Vandelay. `--camera name` is repeatable;
@@ -109,6 +115,37 @@ one timezone per date; a conflicting scope is rejected.
 All sources preserve microsecond timestamps, half-open day bounds, and original
 cross-midnight intervals with a clipped `visible` interval. DST days are calendar
 days, not assumed to be 24 hours. Unsafe SQLite integers fail rather than round.
+
+### Dayflow media archive
+
+`--media-archive` defaults to `~/.local/share/did/media`. It must live outside Git
+repositories and outside the source Dayflow database directory. Back this directory
+up separately: Git contains references, not media bytes. References are relative,
+so the archive can be relocated without changing signed records.
+
+Finalized MP4 segments (and legacy screenshot files) are copied to
+`sha256/HH/FULL_SHA256` beneath the archive root. Files have no extension; their
+bytes are unchanged. Copies are hashed and checked against the source, checked for
+concurrent changes, and published without overwriting existing objects. Existing
+objects are verified before reuse. A segment shared by many frames or days is
+stored once.
+
+The archive is append-only, not a replaceable daily bundle. Recollection updates
+the day's Git-tracked references; changed source bytes create a new object while
+old objects remain available to historical commits. No automatic garbage collection
+is performed. Interrupted collections may leave unreferenced complete objects.
+
+Dayflow's `file_size IS NULL` marks unfinalized MP4 frame rows. These segments are
+reported as `pending-finalization` and retried on recollection; absent files are
+reported as `missing`. Already archived objects are retained even if Dayflow later
+deletes its source, but a fresh collection does not infer their identity from a
+missing source pathname. Old committed references still resolve to the archive.
+The SQLite snapshot and media copies are not one atomic source snapshot.
+
+Preserve `captured_at` and `frame_index`: the current Dayflow MP4 stores frame N at
+presentation time N seconds, independently of capture cadence or wall-clock gaps.
+Screenshot records are point observations, not claims of continuous recording.
+No redaction or frame removal is performed.
 
 ## Verify and sign a snapshot
 
