@@ -43,8 +43,8 @@ over reserved envelope fields.
 `data` is source/type-specific content; `attributes` is additional adapter metadata.
 Neither can override identity, time, schema or placement. Optional titles and text
 avoid requiring fake empty prose for captures or attachments. Future typed payload
-schemas can be added independently of the envelope. The source list still contains
-the three implemented collectors; email/chat and Daycap collectors are future work.
+schemas can be added independently of the envelope. The source list includes
+ActivityWatch, Dayflow, Daycap and VOD; email/chat collectors are future work.
 
 ## Discriminated time union
 
@@ -173,8 +173,8 @@ need not be flattened into activity cards.
 | Dayflow screenshot | `instant`, basis `capture-timestamp` |
 | Dayflow standup | `day`, full report/source-day associations |
 | VOD recording | `interval`, source timing basis retained |
-| Future Daycap capture | `bounds`, basis `capture-request-completion` |
-| Future Daycap activity | `bounds`, basis `sample-envelope` |
+| Daycap capture | `bounds`, basis `capture-request-completion` |
+| Daycap Journal activity/note | `bounds`, basis `sample-envelope` |
 
 `intervalTime(start, end, basis)` is a convenience for sources where a zero-duration
 interval really denotes a point. Capture bounds should be supplied explicitly so
@@ -183,8 +183,9 @@ equal endpoints do not erase their meaning.
 ## Validation and versioning
 
 Source manifests declare `record_schema: "did.record/v1"` and adapter version `/2`.
-The bundle inventory is still just `evidence.json` and `records.jsonl`, hashed by
-stored bytes using did's existing deterministic serializer. `did.day/v1`, Git
+The bundle inventory contains `evidence.json` and `records.jsonl`, plus a derived
+`references.json` for Daycap. Hashes cover stored bytes; Daycap evidence preserves
+the original export manifest bytes, while derived payloads use did's deterministic serializer. `did.day/v1`, Git
 signatures, and OpenTimeStamps are unchanged.
 
 Collection validates records before writing. Verification validates JSONL envelopes,

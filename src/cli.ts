@@ -2,6 +2,7 @@
 import { Argument, Command, InvalidArgumentError, Option } from 'commander'
 import { readFileSync } from 'node:fs'
 import * as collectors from './collectors.ts'
+import { daycap } from './daycap.ts'
 import { defaultMediaArchive } from './media-archive.ts'
 import { encode, expand, scope, type Source } from './model.ts'
 import { Repository, type TimestampAction } from './repository.ts'
@@ -38,13 +39,14 @@ export function program(): Command {
     .description(
       'update one source in a day, preserving the other selected sources; does not commit',
     )
-    .addArgument(new Argument('<source>').choices(['activitywatch', 'dayflow', 'vod']))
+    .addArgument(new Argument('<source>').choices(['activitywatch', 'dayflow', 'daycap', 'vod']))
     .requiredOption('--day <YYYY-MM-DD>')
     .requiredOption('--timezone <IANA_ZONE>')
     .requiredOption('--instance <name>', 'stable device/archive name')
     .option('--aw-host <host>')
     .option('--aw-url <url>', 'ActivityWatch root URL', 'http://localhost:5600')
     .option('--aw-export <file>', 'AW JSON export instead of live HTTP')
+    .option('--daycap-export <directory>', 'Daycap v2 export directory')
     .option(
       '--dayflow-db <path>',
       'Dayflow SQLite database',
@@ -52,7 +54,7 @@ export function program(): Command {
     )
     .option(
       '--media-archive <path>',
-      'permanent Dayflow media archive outside Git and Dayflow',
+      'permanent media archive outside Git and the source directory',
       defaultMediaArchive,
     )
     .option('--vod-root <path>', 'local media archive root')
@@ -76,7 +78,10 @@ export function program(): Command {
         collected = await collectors.activitywatch(bounds, o.awHost, o.awUrl, o.awExport)
       } else if (source === 'dayflow')
         collected = collectors.dayflow(bounds, o.dayflowDb, o.mediaArchive)
-      else if (o.vodDb)
+      else if (source === 'daycap') {
+        if (!o.daycapExport) throw new Error('--daycap-export is required')
+        collected = daycap(bounds, o.daycapExport, o.instance, o.mediaArchive)
+      } else if (o.vodDb)
         collected = collectors.vodDatabase(bounds, o.vodDb, o.vodRoot, o.camera)
       else {
         if (!o.vodRoot || !o.vodConfig)

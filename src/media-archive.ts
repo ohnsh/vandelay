@@ -23,7 +23,7 @@ export function archiveRoot(path: string, sourceDirectory: string): string {
     source = realpathSync(sourceDirectory)
   const rel = relative(source, actual)
   if (rel === '' || (rel !== '..' && !rel.startsWith('..' + sep)))
-    throw new Error('Media archive must be outside the Dayflow directory')
+    throw new Error('Media archive must be outside the source directory')
   for (let parent = actual; ; parent = dirname(parent)) {
     if (
       existsSync(join(parent, '.git')) ||

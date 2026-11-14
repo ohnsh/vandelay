@@ -143,7 +143,7 @@ test('Dayflow archives frames, preserves batch inputs, and retains immutable rev
     expect(readFileSync(oldPath, 'utf8')).toBe('original');
     write(join(archive, second.screenshots.find((r: any) => r.id === 1).media.location.path), 'corrupt');
     expect(() => collectors.dayflow(bounds, path, archive)).toThrow('Corrupt archive object');
-    expect(() => collectors.dayflow(bounds, path, join(source, 'archive'))).toThrow('outside the Dayflow');
+    expect(() => collectors.dayflow(bounds, path, join(source, 'archive'))).toThrow('outside the source');
     const git = join(root, 'git'); mkdirSync(join(git, '.git'), { recursive: true });
     expect(() => collectors.dayflow(bounds, path, join(git, 'archive'))).toThrow('outside Git');
     expect(existsSync(pending)).toBe(true);

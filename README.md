@@ -6,6 +6,7 @@ with Git, and timestamp signed commits with OpenTimeStamps.
 The ActivityWatch, Dayflow and VOD collectors and normalization utilities are
 migrated from `../vandelay`. Git replaces the immutable archive store, day revision
 chain, composition command and custom signature envelopes.
+The Daycap collector imports verified `daycap.export/v2` export directories.
 
 ## Setup
 
@@ -64,6 +65,11 @@ bun run did collect dayflow \
   --day 2026-11-12 --timezone America/Chicago --instance mak \
   --media-archive ~/.local/share/did/media
 
+bun run did collect daycap \
+  --day 2026-11-14 --timezone America/Chicago --instance desktop \
+  --daycap-export /path/to/daycap-export \
+  --media-archive ~/.local/share/did/media
+
 bun run did collect vod \
   --day 2026-11-12 --timezone America/Chicago --instance media-days \
   --vod-root /Volumes/Media/days --vod-config ../vod/vod.config.json
@@ -104,6 +110,14 @@ one timezone per date; a conflicting scope is rejected.
    observation-to-frame attribution. Original junction rows remain in evidence,
    including associations for out-of-day whole-segment frames.
    AI interpretations remain attributed to Dayflow.
+- **Daycap:** `--daycap-export` selects a completed v2 export directory containing
+  `manifest.json`, `manifest.sha256`, and inventoried media. An explicit stable
+  `--instance` identifies the source store. Original manifest bytes become
+  `evidence.json`; captures, Journal notes/cards/analyses/gaps, Evidence analyses/
+  activities, and withdrawals become `did.record/v1` records. Media is verified and
+  copied to the external content-addressed archive. `references.json` is a
+  deterministic dependency index rebuilt during verification. See
+  [Daycap mapping and limitations](docs/daycap.md).
 - **VOD filesystem:** reads `YYYY-MM/DD/_camera/file.{mp4,mov,m4a,opus}`.
   `--vod-config` supports timezone, source timing rules, timelapse wall duration,
   and per-object timestamp overrides as in Vandelay. `--camera name` is repeatable;
@@ -271,7 +285,7 @@ Day manifests have this shape (abbreviated):
 
 Paths are repository-relative. Source manifests use `did.bundle/v1`:
 scope, source, producer, coverage, record count, and an inventory of `evidence.json`
-and `records.jsonl` with ordinary SHA-256 hashes and byte sizes, plus
+and `records.jsonl` (also `references.json` for Daycap) with ordinary SHA-256 hashes and byte sizes, plus
 `record_schema: "did.record/v1"`. The producer is `did/0.1.0`; adapter versions are
 `source/2`. Evidence locators in records are
 relative to their source directory. Media remains external with SHA-256 identities,
@@ -305,7 +319,7 @@ bun run check
 bun test
 ```
 
-Tests cover all three collectors, DST/overlap behavior, source replacement,
+Tests cover all four collectors, DST/overlap behavior, source replacement,
 idempotence, historical reads, tamper rejection, actual SSH-signed SHA-1/SHA-256
 commits, CLI collection, and OTS command lifecycle/failure behavior. OTS networking
 is mocked; tests use temporary software SSH keys rather than hardware tokens.

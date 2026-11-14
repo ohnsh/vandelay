@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWrite, command, withLock } from './io.ts'
+import { daycapReferences } from './daycap.ts'
 import {
   digest,
   encode,
@@ -74,7 +75,7 @@ export class Repository {
     collected: Collected,
   ): { day: string; source: string; changed: boolean } {
     instanceName(instance)
-    if (!['activitywatch', 'dayflow', 'vod'].includes(source))
+    if (!['activitywatch', 'dayflow', 'daycap', 'vod'].includes(source))
       throw new Error('Unknown source')
     if (!equal(bounds, scope(bounds.day, bounds.timezone)))
       throw new Error('Invalid day scope')
@@ -97,10 +98,14 @@ export class Repository {
         )
       const slot = `${source}/${instance}`,
         prefix = `${path.slice(0, -5)}/${slot}`
-      const payloads = {
-        'evidence.json': encode(collected.evidence),
+      const evidenceBytes = collected.evidenceBytes ?? encode(collected.evidence)
+      JSON.parse(evidenceBytes.toString())
+      const payloads: Record<string, Buffer> = {
+        'evidence.json': evidenceBytes,
         'records.jsonl': Buffer.concat(collected.records.map(encode)),
       }
+      if (source === 'daycap')
+        payloads['references.json'] = encode(daycapReferences(evidenceBytes, collected.records, instance))
       const manifest: Manifest = {
         schema: 'did.bundle/v1',
         record_schema: 'did.record/v1',
@@ -161,7 +166,7 @@ export class Repository {
       throw new Error('Invalid day manifest')
     for (const [slot, ref] of Object.entries(day.sources)) {
       const [source, instance, extra] = slot.split('/')
-      if (extra !== undefined || !['activitywatch', 'dayflow', 'vod'].includes(source))
+      if (extra !== undefined || !['activitywatch', 'dayflow', 'daycap', 'vod'].includes(source))
         throw new Error('Invalid source slot')
       instanceName(instance)
       const prefix = `${path.slice(0, -5)}/${slot}`
@@ -176,11 +181,16 @@ export class Repository {
         manifest.source.instance !== instance
       )
         throw new Error('Invalid source manifest')
-      if (!equal(Object.keys(manifest.files).sort(), ['evidence.json', 'records.jsonl']))
+      const inventory = source === 'daycap'
+        ? ['evidence.json', 'records.jsonl', 'references.json']
+        : ['evidence.json', 'records.jsonl']
+      if (!equal(Object.keys(manifest.files).sort(), inventory))
         throw new Error('Invalid payload inventory')
+      const payloads: Record<string, Buffer> = {}
       for (const [name, entry] of Object.entries(manifest.files)) {
         const bytes = checked({ ...entry, path: `${prefix}/${name}` })
-        if (name === 'evidence.json') JSON.parse(bytes.toString())
+        payloads[name] = bytes
+        if (name !== 'records.jsonl') JSON.parse(bytes.toString())
         else {
           const text = bytes.toString()
           if (text && !text.endsWith('\n')) throw new Error('JSONL must end with LF')
@@ -199,6 +209,13 @@ export class Repository {
             ids.add(item.id)
           }
         }
+      }
+      if (source === 'daycap') {
+        const text = payloads['records.jsonl'].toString()
+        const records = text ? text.trimEnd().split('\n').map(line => JSON.parse(line)) : []
+        const expected = encode(daycapReferences(payloads['evidence.json'], records, instance))
+        if (!expected.equals(payloads['references.json']))
+          throw new Error('Daycap reference index does not match evidence and records')
       }
     }
     return day

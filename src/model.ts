@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { Temporal } from '@js-temporal/polyfill'
 
 export { Temporal }
-export type Source = 'activitywatch' | 'dayflow' | 'vod'
+export type Source = 'activitywatch' | 'dayflow' | 'daycap' | 'vod'
 export interface Interval {
   start: string
   end: string
@@ -24,6 +24,11 @@ export interface Media {
   media_start_seconds?: number
   media_end_seconds?: number
   availability?: string
+  selector?: {
+    type: 'video-frame'
+    frame_index: number
+    presentation: { value: string; timescale: number }
+  }
 }
 export interface DayAssociation {
   day: string
@@ -62,6 +67,8 @@ export type RecordInput = RecordContent & { time: RecordTime }
 export interface Collected {
   records: ArchiveRecord[]
   evidence: unknown
+  /** Exact source bytes, when reserialization would discard source evidence. */
+  evidenceBytes?: Buffer
   coverage: {
     state: 'observed'
     method: string
