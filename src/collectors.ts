@@ -8,17 +8,20 @@ import {
   addSeconds,
   clip,
   compare,
+  compareRecords,
   encode,
   epoch,
   expand,
   fileHash,
   instant,
+  intervalTime,
+  iso,
   localInstant,
   record,
   safePath,
   seconds,
   Temporal,
-  type ActivityRecord,
+  type ArchiveRecord,
   type Collected,
   type Media,
   type Scope,
@@ -74,14 +77,14 @@ function rows(db: Database, sql: string, args: SQLQueryBindings[] = []): Row[] {
     )
 }
 export function result(
-  records: ActivityRecord[],
+  records: ArchiveRecord[],
   evidence: unknown,
   method: string,
   limitations: string[],
   coverage: Record<string, unknown> = {},
 ): Collected {
   return {
-    records: records.sort((a, b) => compare(a.start, b.start) || compare(a.id, b.id)),
+    records: records.sort(compareRecords),
     evidence,
     coverage: { state: 'observed', method, limitations, ...coverage },
   }
@@ -109,7 +112,7 @@ export async function activitywatch(
   if (!selected.length) throw new Error(`No ActivityWatch buckets for host ${host}`)
   const buckets: Record<string, unknown> = Object.create(null),
     observations: Record<string, unknown> = Object.create(null),
-    records: ActivityRecord[] = []
+    records: ArchiveRecord[] = []
   for (const [key, bucket] of selected) {
     // AW filters on event start, not overlap. Don't impose a lower start bound.
     const events: Row[] = snapshot
@@ -136,16 +139,14 @@ export async function activitywatch(
       const start = instant(event.timestamp),
         end = addSeconds(start, event.duration),
         data = event.data
-      const r = record(
-        `${key}:${event.id}`,
-        'activitywatch.' + bucket.type,
-        start,
-        end,
-        bounds,
-        String(data.app ?? data.status ?? bucket.type),
-        String(data.title ?? data.url ?? ''),
-        { evidence: { file: 'evidence.json', bucket: key, id: event.id }, data },
-      )
+      const r = record({
+        id: `${key}:${event.id}`,
+        kind: 'activitywatch.' + bucket.type,
+        time: intervalTime(start, end, 'source-reported-duration'),
+        title: String(data.app ?? data.status ?? bucket.type),
+        text: String(data.title ?? data.url ?? ''),
+        evidence: { file: 'evidence.json', bucket: key, id: event.id }, data,
+      }, bounds)
       if (r) {
         records.push(r)
         kept.push(event)
@@ -180,7 +181,7 @@ export function dayflow(
   mediaArchive = defaultMediaArchive,
 ): Collected {
   const db = sqliteRead(path),
-    records: ActivityRecord[] = [],
+    records: ArchiveRecord[] = [],
     evidence: Record<string, unknown> = {}
   try {
     const lo = seconds(instant(bounds.start)),
@@ -194,23 +195,19 @@ export function dayflow(
       evidence[table] = selected
       for (const row of selected) {
         if (table === 'timeline_cards' && row.is_deleted) continue
-        const r = record(
-          `${table}:${row.id}`,
-          'dayflow.' + table,
-          epoch(row.start_ts),
-          epoch(row.end_ts),
-          bounds,
-          String(row.title ?? ''),
-          ['summary', 'detailed_summary', 'observation']
+        const r = record({
+          id: `${table}:${row.id}`,
+          kind: 'dayflow.' + table,
+          time: intervalTime(epoch(row.start_ts), epoch(row.end_ts), 'source-asserted-interval'),
+          title: String(row.title ?? ''),
+          text: ['summary', 'detailed_summary', 'observation']
             .map((k) => String(row[k] ?? ''))
             .join('\n')
             .trim(),
-          {
-            evidence: { file: 'evidence.json', table, id: row.id },
-            interpretation: 'source-generated',
-            data: row,
-          },
-        )
+          evidence: { file: 'evidence.json', table, id: row.id },
+          interpretation: 'source-generated',
+          data: row,
+        }, bounds)
         if (r) records.push(r)
       }
     }
@@ -224,21 +221,21 @@ export function dayflow(
       if (row.standup_day === bounds.day || sourceDay === bounds.day) {
         reports.push(row)
         records.push(
-          record(
-            `report:${row.standup_day}:${row.id ?? ''}`,
-            'dayflow.report',
-            instant(bounds.start),
-            instant(bounds.end),
-            bounds,
-            'Dayflow daily report',
-            encode(payload).toString().trimEnd(),
-            {
-              time_basis: 'day-associated-not-event-time',
-              data: payload,
-              report_day: row.standup_day,
-              source_day: sourceDay,
+          record({
+            id: `report:${row.standup_day}:${row.id ?? ''}`,
+            kind: 'dayflow.report',
+            time: {
+              model: 'day',
+              associations: [
+                { day: row.standup_day, timezone: bounds.timezone, role: 'report-day' },
+                ...(sourceDay ? [{ day: sourceDay, timezone: bounds.timezone, role: 'source-day' }] : []),
+              ],
             },
-          )!,
+            title: 'Dayflow daily report',
+            text: encode(payload).toString().trimEnd(),
+            interpretation: 'source-generated',
+            data: payload,
+          }, bounds)!,
         )
       }
     }
@@ -354,20 +351,14 @@ export function dayflow(
             batch_ids: [...(screenshotBatches.get(row.id) ?? [])].sort((a, b) => a - b),
             media: asset,
           }
-          const r = record(
-            `screenshots:${row.id}`,
-            'dayflow.screenshots',
-            epoch(row.captured_at),
-            epoch(row.captured_at),
-            bounds,
-            '',
-            '',
-            {
-              evidence: { file: 'evidence.json', table: 'screenshots', id: row.id },
-              data: saved,
-              ...('sha256' in asset ? { media: [asset] } : {}),
-            },
-          )
+          const r = record({
+            id: `screenshots:${row.id}`,
+            kind: 'dayflow.screenshots',
+            time: { model: 'instant', at: iso(epoch(row.captured_at)), basis: 'capture-timestamp' },
+            evidence: { file: 'evidence.json', table: 'screenshots', id: row.id },
+            data: saved,
+            ...('sha256' in asset ? { media: [asset] } : {}),
+          }, bounds)
           if (r) records.push(r)
           return saved
         })
@@ -465,7 +456,7 @@ export function vodFiles(
   const root = expand(directory)
   if (!existsSync(root) || !statSync(root).isDirectory())
     throw new Error(`Archive root missing: ${root}`)
-  const records: ActivityRecord[] = [],
+  const records: ArchiveRecord[] = [],
     evidence: { config: VodConfig; files: unknown[] } = { config, files: [] }
   const zone = config.timezone ?? bounds.timezone
   const first = instant(bounds.start)
@@ -536,11 +527,12 @@ export function vodFiles(
         throw new Error(`Media changed during probing: ${key}`)
       evidence.files.push({ path: key, probe: metadata, asset, time_basis: basis })
       records.push(
-        record(key, 'vod.recording', start, end, bounds, camera, key, {
+        record({
+          id: key, kind: 'vod.recording',
+          time: intervalTime(start, end, basis), title: camera, text: key,
           media: [{ ...asset, media_start_seconds: 0, media_end_seconds: duration }],
-          time_basis: basis,
-          camera,
-        })!,
+          attributes: { camera },
+        }, bounds)!,
       )
     }
   }
@@ -568,7 +560,7 @@ export function vodDatabase(
 ): Collected {
   const db = sqliteRead(path),
     root = directory ? expand(directory) : undefined,
-    records: ActivityRecord[] = []
+    records: ArchiveRecord[] = []
   const evidence: { recordings: Row[]; related: Record<string, Record<string, Row[]>> } =
     { recordings: [], related: Object.create(null) }
   try {
@@ -625,21 +617,12 @@ export function vodDatabase(
           })
       }
       records.push(
-        record(
-          r.id,
-          'vod.recording',
-          epoch(r.start_utc_ms / 1000),
-          epoch(r.end_utc_ms / 1000),
-          bounds,
-          r.camera_id,
-          r.source_key,
-          {
-            media: assets,
-            time_basis: 'vod-catalog',
-            data: r,
-            media_identity_missing: !assets.length,
-          },
-        )!,
+        record({
+          id: String(r.id), kind: 'vod.recording',
+          time: intervalTime(epoch(r.start_utc_ms / 1000), epoch(r.end_utc_ms / 1000), 'vod-catalog'),
+          title: r.camera_id, text: r.source_key, media: assets,
+          data: r, attributes: { media_identity_missing: !assets.length },
+        }, bounds)!,
       )
     }
     return result(

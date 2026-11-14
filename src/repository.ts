@@ -8,6 +8,7 @@ import {
   expand,
   safePath,
   scope,
+  validateRecord,
   type Collected,
   type Manifest,
   type Scope,
@@ -77,6 +78,12 @@ export class Repository {
       throw new Error('Unknown source')
     if (!equal(bounds, scope(bounds.day, bounds.timezone)))
       throw new Error('Invalid day scope')
+    const ids = new Set<string>()
+    for (const item of collected.records) {
+      validateRecord(item, bounds)
+      if (ids.has(item.id)) throw new Error('Duplicate record ID')
+      ids.add(item.id)
+    }
     const gitDir = this.assertRepository()
     return withLock(gitDir, () => {
       const path = dayPath(bounds.day),
@@ -95,10 +102,11 @@ export class Repository {
         'records.jsonl': Buffer.concat(collected.records.map(encode)),
       }
       const manifest: Manifest = {
-        schema: 'vandelay.bundle/v1',
+        schema: 'did.bundle/v1',
+        record_schema: 'did.record/v1',
         scope: bounds,
         source: { type: source, instance },
-        producer: { name: 'did', version: '0.1.0', adapter: `${source}/1` },
+        producer: { name: 'did', version: '0.1.0', adapter: `${source}/2` },
         coverage: collected.coverage,
         record_count: collected.records.length,
         files: Object.fromEntries(
@@ -161,7 +169,8 @@ export class Repository {
         throw new Error('Unexpected source manifest path')
       const manifest: Manifest = JSON.parse(checked(ref).toString())
       if (
-        manifest.schema !== 'vandelay.bundle/v1' ||
+        manifest.schema !== 'did.bundle/v1' ||
+        manifest.record_schema !== 'did.record/v1' ||
         !equal(manifest.scope, day.scope) ||
         manifest.source.type !== source ||
         manifest.source.instance !== instance
@@ -183,6 +192,12 @@ export class Repository {
             : []
           if (records.length !== manifest.record_count)
             throw new Error('Record count mismatch')
+          const ids = new Set<string>()
+          for (const item of records) {
+            validateRecord(item, manifest.scope)
+            if (ids.has(item.id)) throw new Error('Duplicate record ID')
+            ids.add(item.id)
+          }
         }
       }
     }

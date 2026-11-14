@@ -117,9 +117,15 @@ one timezone per date; a conflicting scope is rejected.
   claims; remote existence is not inferred. There is no live catalog downloader,
   SQL dump restore or remote media fetcher.
 
-All sources preserve microsecond timestamps, half-open day bounds, and original
-cross-midnight intervals with a clipped `visible` interval. DST days are calendar
-days, not assumed to be 24 hours. Unsafe SQLite integers fail rather than round.
+Records use the `did.record/v1` envelope with a discriminated `time.model`:
+`instant`, `interval`, `bounds`, `day`, or `unknown`. Original times remain intact;
+`placement` supplies a derived day projection. Reports keep explicit calendar
+associations rather than fabricated day-long intervals. See the
+[record envelope specification](docs/record-envelope.md).
+
+Timed records preserve microsecond timestamps and half-open day bounds. DST days
+are calendar days, not assumed to be 24 hours. Unsafe SQLite integers fail rather
+than round.
 
 ### Dayflow media archive
 
@@ -166,7 +172,8 @@ git -C data show HEAD:2026/11/12.json
 ```
 
 `verify` checks scope/source consistency, manifest and payload SHA-256 hashes and
-sizes, JSON/JSONL parsing and record counts. `--commit` reads exact Git blobs,
+sizes, JSON/JSONL parsing, record counts, unique IDs, and record time/placement
+semantics. `--commit` reads exact Git blobs,
 independently of uncommitted edits; `--signature` additionally invokes Git's commit
 signature verification. External media bytes are not rehashed by this command.
 The working-tree manifest itself becomes authenticated when its Git commit is
@@ -262,10 +269,11 @@ Day manifests have this shape (abbreviated):
 }
 ```
 
-Paths are repository-relative. Source manifests retain `vandelay.bundle/v1`:
+Paths are repository-relative. Source manifests use `did.bundle/v1`:
 scope, source, producer, coverage, record count, and an inventory of `evidence.json`
-and `records.jsonl` with ordinary SHA-256 hashes and byte sizes. The producer is
-`did/0.1.0`; adapter versions remain `source/1`. Evidence locators in records are
+and `records.jsonl` with ordinary SHA-256 hashes and byte sizes, plus
+`record_schema: "did.record/v1"`. The producer is `did/0.1.0`; adapter versions are
+`source/2`. Evidence locators in records are
 relative to their source directory. Media remains external with SHA-256 identities,
 sizes and location hints; this repository does not back up media bytes.
 
@@ -274,11 +282,14 @@ Verification hashes stored bytes, never reserialized JSON. `.gitattributes` disa
 text conversion and clean/smudge filters so stored bytes are stable across platforms.
 
 Git supplies parent history instead of a domain `parent` field. A day version is
-identified by `(commit ID, date path)`. Source bundle bytes can later be copied
-directly into Vandelay's content-addressed bundle layout; converting day manifests
-requires a deterministic transformation and provenance mapping. Preserve original
-signed Git objects and OTS proofs to retain the historical evidence. Old signatures
-do not directly authenticate newly serialized day objects.
+identified by `(commit ID, date path)`. Other archive layouts can consume the source
+evidence and normalized records through explicit adapters. Preserve original signed
+Git objects and OTS proofs when transforming archives: old signatures do not directly
+authenticate newly serialized day objects.
+
+The initial Vandelay-derived record/bundle envelope has been replaced without a
+compatibility reader. Regenerate earlier uncommitted collections into a fresh data
+repository; existing data files are not migrated automatically.
 
 A standalone day proof can be built from the signed commit, its OTS proof, the raw
 Git trees along the manifest's path, and the manifest's hash-linked payloads. The

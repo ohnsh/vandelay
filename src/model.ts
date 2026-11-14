@@ -25,17 +25,42 @@ export interface Media {
   media_end_seconds?: number
   availability?: string
 }
-export interface ActivityRecord extends Interval {
+export interface DayAssociation {
+  day: string
+  timezone: string
+  role: string // e.g. report-day, source-day, or archive-association
+}
+/** Time shape and its evidentiary basis are separate: an interval need not be measured work. */
+export type RecordTime =
+  | { model: 'instant'; at: string; basis: string }
+  | { model: 'interval'; start: string; end: string; basis: string }
+  | { model: 'bounds'; start: string; end: string; basis: string }
+  | { model: 'day'; associations: DayAssociation[] }
+  | { model: 'unknown'; reason: string; associations: DayAssociation[] }
+export type Placement =
+  | { model: 'instant'; at: string }
+  | { model: 'interval' | 'bounds'; start: string; end: string }
+  | { model: 'day' | 'unknown'; roles: string[] }
+export interface RecordContent {
   id: string
   kind: string
-  visible: Interval
-  title: string
-  text: string
+  title?: string
+  text?: string
   media?: Media[]
-  [key: string]: unknown
+  evidence?: Record<string, unknown>
+  interpretation?: 'source-generated' | 'source-reported' | 'adapter-derived' | 'human-authored'
+  data?: unknown
+  attributes?: Record<string, unknown>
 }
+export interface ArchiveRecord extends RecordContent {
+  schema: 'did.record/v1'
+  time: RecordTime
+  /** Derived membership/display projection in the enclosing bundle's day scope. */
+  placement: Placement
+}
+export type RecordInput = RecordContent & { time: RecordTime }
 export interface Collected {
-  records: ActivityRecord[]
+  records: ArchiveRecord[]
   evidence: unknown
   coverage: {
     state: 'observed'
@@ -46,7 +71,8 @@ export interface Collected {
   observations?: unknown
 }
 export interface Manifest {
-  schema: 'vandelay.bundle/v1'
+  schema: 'did.bundle/v1'
+  record_schema: 'did.record/v1'
   scope: Scope
   source: { type: Source; instance: string }
   producer: { name: string; version: string; adapter: string }
@@ -186,29 +212,132 @@ export function clip(
     end: iso(cmp(end, hi) < 0 ? end : hi),
   }
 }
-export function record(
-  id: string | number,
-  kind: string,
-  start: Temporal.Instant,
-  end: Temporal.Instant,
-  bounds: Scope,
-  title = '',
-  text = '',
-  extra: Record<string, unknown> = {},
-): ActivityRecord | null {
-  const visible = clip(start, end, bounds)
-  return visible
-    ? {
-        id: String(id),
-        kind,
-        start: iso(start),
-        end: iso(end),
-        visible,
-        title,
-        text,
-        ...extra,
-      }
-    : null
+function object(value: unknown): asserts value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Expected an object')
+}
+function nonempty(value: unknown): asserts value is string {
+  if (typeof value !== 'string' || !value.trim()) throw new Error('Expected nonempty string')
+}
+function keys(value: Record<string, unknown>, allowed: string[]) {
+  if (Object.keys(value).some(key => !allowed.includes(key)))
+    throw new Error('Unexpected field')
+}
+function timestamp(value: unknown): string {
+  nonempty(value)
+  const parsed = instant(value)
+  if (parsed.epochNanoseconds % 1000n !== 0n)
+    throw new Error('Timestamps must have at most microsecond precision')
+  return iso(parsed)
+}
+/** Validate and normalize the union at runtime as well as in TypeScript. */
+export function normalizeTime(value: unknown): RecordTime {
+  object(value)
+  switch (value.model) {
+    case 'instant':
+      keys(value, ['model', 'at', 'basis'])
+      nonempty(value.basis)
+      return { model: 'instant', at: timestamp(value.at), basis: value.basis }
+    case 'interval':
+    case 'bounds': {
+      keys(value, ['model', 'start', 'end', 'basis'])
+      nonempty(value.basis)
+      const start = timestamp(value.start), end = timestamp(value.end)
+      const order = Temporal.Instant.compare(instant(start), instant(end))
+      if (order > 0 || (order === 0 && value.model === 'interval'))
+        throw new Error('Interval must have positive duration; bounds may be equal')
+      return { model: value.model, start, end, basis: value.basis }
+    }
+    case 'day':
+    case 'unknown': {
+      keys(value, value.model === 'day' ? ['model', 'associations'] : ['model', 'reason', 'associations'])
+      if (!Array.isArray(value.associations) || !value.associations.length)
+        throw new Error('Day membership requires explicit associations')
+      const associations = value.associations.map(item => {
+        object(item)
+        keys(item, ['day', 'timezone', 'role'])
+        nonempty(item.day); nonempty(item.timezone); nonempty(item.role)
+        scope(item.day, item.timezone)
+        return { day: item.day, timezone: item.timezone, role: item.role }
+      }).sort((a, b) => compare(a.day, b.day) || compare(a.timezone, b.timezone) || compare(a.role, b.role))
+      if (new Set(associations.map(json)).size !== associations.length)
+        throw new Error('Duplicate day association')
+      if (value.model === 'day') return { model: 'day', associations }
+      nonempty(value.reason)
+      return { model: 'unknown', reason: value.reason, associations }
+    }
+    default: throw new Error('Unknown time model')
+  }
+}
+export function placement(time: RecordTime, bounds: Scope): Placement | null {
+  switch (time.model) {
+    case 'instant':
+      return clip(instant(time.at), instant(time.at), bounds)
+        ? { model: 'instant', at: time.at } : null
+    case 'interval':
+    case 'bounds': {
+      const visible = clip(instant(time.start), instant(time.end), bounds)
+      return visible ? { model: time.model, ...visible } : null
+    }
+    case 'day':
+    case 'unknown': {
+      // Calendar associations are not inferred instants in another timezone.
+      const roles = time.associations.filter(a => a.day === bounds.day && a.timezone === bounds.timezone)
+        .map(a => a.role).sort(compare)
+      return roles.length ? { model: time.model, roles } : null
+    }
+  }
+}
+/** Optional convenience for sources whose zero-duration intervals represent points. */
+export function intervalTime(start: Temporal.Instant, end: Temporal.Instant, basis: string): RecordTime {
+  return Temporal.Instant.compare(start, end) === 0
+    ? { model: 'instant', at: iso(start), basis }
+    : { model: 'interval', start: iso(start), end: iso(end), basis }
+}
+function content(value: Record<string, unknown>) {
+  nonempty(value.id); nonempty(value.kind)
+  for (const key of ['title', 'text'])
+    if (value[key] !== undefined && typeof value[key] !== 'string')
+      throw new Error(`Invalid ${key}`)
+  for (const key of ['evidence', 'attributes'])
+    if (value[key] !== undefined) object(value[key])
+  if (value.media !== undefined && !Array.isArray(value.media)) throw new Error('Invalid media')
+  if (value.interpretation !== undefined &&
+      !['source-generated', 'source-reported', 'adapter-derived', 'human-authored'].includes(value.interpretation as string))
+    throw new Error('Invalid interpretation')
+}
+const contentKeys = ['id', 'kind', 'title', 'text', 'media', 'evidence', 'interpretation', 'data', 'attributes']
+export function record(input: RecordInput, bounds: Scope): ArchiveRecord | null {
+  object(input)
+  keys(input, [...contentKeys, 'time'])
+  content(input)
+  const time = normalizeTime(input.time)
+  const selected = placement(time, bounds)
+  return selected ? { ...input, schema: 'did.record/v1', time, placement: selected } : null
+}
+/** Reject malformed JSONL, including fabricated clipping and ambiguous old fields. */
+export function validateRecord(value: unknown, bounds: Scope): asserts value is ArchiveRecord {
+  object(value)
+  keys(value, [...contentKeys, 'schema', 'time', 'placement'])
+  if (value.schema !== 'did.record/v1') throw new Error('Unsupported record schema')
+  content(value)
+  const time = normalizeTime(value.time)
+  const selected = placement(time, bounds)
+  if (!equal(time, value.time) || !selected || !equal(selected, value.placement))
+    throw new Error('Invalid record time or day placement')
+}
+/** Day-associated/undated records follow timed records, without invented midnight times. */
+export function compareRecords(a: ArchiveRecord, b: ArchiveRecord): number {
+  const key = (r: ArchiveRecord): string => {
+    switch (r.time.model) {
+      case 'instant': return `0:${r.time.at}`
+      case 'interval':
+      case 'bounds': return `0:${r.time.start}`
+      case 'day': return '1'
+      case 'unknown': return '2'
+    }
+  }
+  return compare(key(a), key(b)) || compare(a.kind, b.kind) || compare(a.id, b.id)
 }
 export function fileHash(path: string): string {
   const h = createHash('sha256'),

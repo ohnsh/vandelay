@@ -18,7 +18,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 function collect(text = 'hello', source: Source = 'dayflow') {
-  const r = record('1', 'fixture', instant(bounds.start), instant(bounds.end), bounds, '', text)!;
+  const r = record({ id: '1', kind: 'fixture', time: { model: 'interval', start: bounds.start, end: bounds.end, basis: 'fixture' }, text }, bounds)!;
   return repo.collect(source, 'mac', bounds, result([r], { raw: text }, 'fixture', []));
 }
 function commit() {
@@ -60,6 +60,32 @@ test('tampering fails, while historical verification reads exact blobs', () => {
   expect(() => repo.verify(bounds.day)).toThrow('Hash/size');
   expect(() => collect()).toThrow('Hash/size');
   expect(repo.verify(bounds.day, id).scope).toEqual(bounds);
+});
+
+test('collection and verification validate envelope semantics, not only hashes', () => {
+  collect();
+  const prefix = '2026/11/12/dayflow/mac';
+  const path = join(repo.root, prefix, 'records.jsonl');
+  const item = JSON.parse(readFileSync(path, 'utf8'));
+  expect(item.schema).toBe('did.record/v1');
+  expect(() => repo.collect('dayflow', 'mac', bounds, result([item, item], {}, 'fixture', []))).toThrow('Duplicate');
+  const invalid = { ...item, placement: { model: 'instant', at: bounds.end } };
+  expect(() => repo.collect('dayflow', 'mac', bounds, result([invalid], {}, 'fixture', []))).toThrow('placement');
+  // Recompute all hashes: semantic invalidity must still be rejected.
+  const bytes = encode(invalid);
+  writeFileSync(path, bytes);
+  const manifestPath = join(repo.root, prefix, 'manifest.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  expect(manifest.schema).toBe('did.bundle/v1');
+  expect(manifest.record_schema).toBe('did.record/v1');
+  manifest.files['records.jsonl'] = { bytes: bytes.length, sha256: digest(bytes) };
+  const manifestBytes = encode(manifest);
+  writeFileSync(manifestPath, manifestBytes);
+  const dayPath = join(repo.root, '2026/11/12.json');
+  const day = JSON.parse(readFileSync(dayPath, 'utf8'));
+  day.sources['dayflow/mac'] = { path: `${prefix}/manifest.json`, bytes: manifestBytes.length, sha256: digest(manifestBytes) };
+  writeFileSync(dayPath, encode(day));
+  expect(() => repo.verify(bounds.day)).toThrow('placement');
 });
 
 test('reject scope collisions, traversal and escaped output paths', () => {

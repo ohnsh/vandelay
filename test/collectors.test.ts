@@ -18,7 +18,7 @@ test('DST, midnight membership, microseconds and deterministic JSON', () => {
     const b = scope(date, 'America/Chicago');
     expect(seconds(instant(b.end)) - seconds(instant(b.start))).toBe(hours * 3600);
   }
-  expect(record('a', 'test', instant(bounds.end), instant(bounds.end), bounds)).toBeNull();
+  expect(record({ id: 'a', kind: 'test', time: { model: 'instant', at: bounds.end, basis: 'fixture' } }, bounds)).toBeNull();
   expect(iso(instant('2026-11-10T06:00:00.123456Z'))).toBe('2026-11-10T06:00:00.123456Z');
   expect(() => localInstant('2026-11-01T01:30:00', bounds.timezone)).toThrow('Ambiguous');
   expect(() => localInstant('2026-03-08T02:30:00', bounds.timezone, 'later')).toThrow('Nonexistent');
@@ -34,7 +34,7 @@ test('AW retains overlaps, scopes hosts and excludes volatile bucket update time
   write(path, encode(snapshot));
   const first = await collectors.activitywatch(bounds, 'mac', undefined, path);
   expect(first.records).toHaveLength(1);
-  expect(first.records[0].visible.start).toBe(bounds.start);
+    expect(first.records[0].placement).toEqual({ model: 'interval', start: bounds.start, end: '2026-11-10T06:01:00.000000Z' });
   snapshot.buckets.window.last_updated = 'second'; write(path, encode(snapshot));
   const second = await collectors.activitywatch(bounds, 'mac', undefined, path);
   expect(second.evidence).toEqual(first.evidence);
@@ -68,6 +68,15 @@ test('Dayflow reads WAL, preserves deleted evidence and includes next-day report
   try {
     const data = collectors.dayflow(bounds, path);
     expect(data.records).toHaveLength(3);
+    const report = data.records.find(r => r.kind === 'dayflow.report')!;
+    expect(report.time).toEqual({ model: 'day', associations: [
+      { day: bounds.day, timezone: bounds.timezone, role: 'source-day' },
+      { day: '2026-11-11', timezone: bounds.timezone, role: 'report-day' },
+    ] });
+    expect(report.placement).toEqual({ model: 'day', roles: ['source-day'] });
+    const nextDay = collectors.dayflow(scope('2026-11-11', bounds.timezone), path);
+    expect(nextDay.records.find(r => r.id === report.id)!.time).toEqual(report.time);
+    expect(data.records.find(r => r.kind === 'dayflow.observations')!.time.model).toBe('instant');
     expect((data.evidence as { timeline_cards: unknown[] }).timeline_cards).toHaveLength(2);
     expect(db.query('SELECT count(*) AS n FROM timeline_cards').get()).toEqual({ n: 2 });
   } finally { db.close(); }
@@ -78,7 +87,7 @@ test('VOD filesystem retains midnight overlaps, media hashes and timelapse durat
   write(path, 'media bytes');
   const data = collectors.vodFiles(bounds, media, { timezone: bounds.timezone, sources: { cam: { mode: 'timelapse', wallDurationSeconds: 120 } } }, [], 1, () => ({ format: { duration: '2' } }));
   expect(data.records).toHaveLength(1);
-  expect(data.records[0].visible.start).toBe(bounds.start);
+   expect(data.records[0].placement).toEqual({ model: 'interval', start: bounds.start, end: '2026-11-10T06:01:00.000000Z' });
   expect(data.records[0].media?.[0].sha256).toBe(digest('media bytes'));
   expect(data.records[0].media?.[0].media_end_seconds).toBe(2);
   expect(() => collectors.vodFiles(bounds, media, { timezone: bounds.timezone }, [], 1, file => {
@@ -110,6 +119,7 @@ test('Dayflow archives frames, preserves batch inputs, and retains immutable rev
   try {
     const first = collectors.dayflow(bounds, path, archive), evidence = first.evidence as any;
     expect(first.records.filter(r => r.kind === 'dayflow.screenshots')).toHaveLength(4);
+    expect(first.records.find(r => r.kind === 'dayflow.screenshots')!.time.model).toBe('instant');
     expect(evidence.screenshots).toHaveLength(6);
     expect(evidence.batch_screenshots).toHaveLength(4);
     expect(evidence.analysis_batches.map((r: any) => r.id)).toEqual([7, 8, 9]);
