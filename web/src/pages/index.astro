@@ -1,0 +1,41 @@
+---
+import Layout from '../layouts/Layout.astro'
+import { publication } from '../lib/snapshot'
+import { withBase } from '../lib/model'
+const days = [...publication.days].reverse()
+const months = [...new Set(days.map(d => d.scope.day.slice(0, 7)))]
+---
+<Layout title="Archive">
+  <section class="hero">
+    <div class="eyebrow">The activity archive</div>
+    <h1>Days, in detail.</h1>
+    <p>Activities, observations and recordings, collected into a browsable record.</p>
+    <div class="stats"><span><strong>{days.length}</strong> days</span><span><strong>{days.reduce((n, d) => n + d.entries.filter(e => e.track === 'activity').length, 0)}</strong> activities</span>
+      <span><strong>{days.reduce((n, d) => n + d.frames.length, 0).toLocaleString('en-US')}</strong> captures</span></div>
+  </section>
+  {months.map(month => {
+    const [year, m] = month.split('-').map(Number)
+    const count = new Date(Date.UTC(year, m, 0)).getUTCDate()
+    const offset = new Date(Date.UTC(year, m - 1, 1)).getUTCDay()
+    return <section class="month">
+      <h2>{new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${month}-01T12:00:00Z`))}</h2>
+      <div class="calendar">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(label => <div class="weekday">{label}</div>)}
+        {Array.from({ length: offset }, () => <div class="calendar-empty" />)}
+        {Array.from({ length: count }, (_, i) => {
+          const date = `${month}-${String(i + 1).padStart(2, '0')}`
+          const day = days.find(d => d.scope.day === date)
+          return day ? <a class="calendar-day available" href={withBase(`/days/${date}/`)}>
+            <strong>{i + 1}</strong><span>{day.entries.filter(e => e.track === 'activity').length} activities</span>
+            <small>{day.sources.map(s => s.slot.split('/')[0]).join(' · ')}</small>
+          </a> : <div class="calendar-day absent"><strong>{i + 1}</strong></div>
+        })}
+      </div>
+    </section>
+  })}
+  <section class="snapshot-note">
+    <h2>One immutable snapshot</h2>
+    <p>These pages were built from commit <code>{publication.commit}</code>. Missing days mean no published bundle in this selection, not inactivity.</p>
+    <p>Archive inventories and record semantics were verified at build time. Generated pages and previews are derivatives; source signatures do not directly sign this website.</p>
+  </section>
+</Layout>

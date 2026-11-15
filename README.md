@@ -312,6 +312,22 @@ Git bundles preserve history today; plain `git archive` exports omit signature
 and inclusion evidence. Keep an independent trusted commit ID if detecting rollback
 matters: branch names and valid old snapshots do not establish which is latest.
 
+## Static web publication
+
+The [`web/` workspace package](web/README.md) builds a calendar, multi-source daily
+timelines, capture galleries, sample timelapses and Pagefind search from a pinned
+data-repository commit:
+
+```sh
+bun install --frozen-lockfile
+bun run --cwd web build --commit ddc9dd39ced26
+bun run --cwd web preview --port 4324
+```
+
+The result is a self-contained static site in `web/dist/`. Media preparation uses
+the external did archive and FFmpeg; use `--media none` for a text-only build.
+See the package README for selection, media URLs, subpath hosting and verification.
+
 ## Development
 
 ```sh

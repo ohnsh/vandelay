@@ -1,0 +1,82 @@
+---
+import Layout from '../layouts/Layout.astro'
+---
+<Layout title="Search">
+  <section class="search-heading"><div class="eyebrow">Across the archive</div><h1>Find a moment.</h1>
+    <p>Search activities, detail passages, observations, app events and reports.</p>
+  </section>
+  <form id="search-form" data-base={import.meta.env.BASE_URL}>
+    <label class="search-query">Search<input type="search" name="q" id="query" placeholder="A project, app, phrase…" /></label>
+    <div class="search-filters">
+      {['date', 'source', 'instance', 'type', 'app', 'category'].map(filter => <label>{filter}<select name={filter}><option value="">All</option></select></label>)}
+      <button type="submit">Search</button>
+    </div>
+  </form>
+  <p id="search-status" role="status">Loading search index…</p>
+  <ol id="results" class="search-results"></ol>
+  <button id="more" hidden>More results</button>
+</Layout>
+<script>
+  const form = document.querySelector<HTMLFormElement>('#search-form')!
+  const results = document.querySelector<HTMLOListElement>('#results')!
+  const status = document.querySelector<HTMLElement>('#search-status')!
+  const more = document.querySelector<HTMLButtonElement>('#more')!
+  const base = form.dataset.base!.replace(/\/$/, '')
+  type Result = { data: () => Promise<{ url: string; meta: { title: string; description: string }; excerpt: string }> }
+  let matches: Result[] = [], offset = 0, generation = 0
+  const params = new URL(location.href).searchParams
+  const query = form.elements.namedItem('q') as HTMLInputElement
+  query.value = params.get('q') ?? ''
+  const append = async (version: number) => {
+    more.disabled = true
+    const batch = await Promise.all(matches.slice(offset, offset + 20).map(r => r.data()))
+    if (version !== generation) return
+    offset += batch.length
+    for (const data of batch) {
+      const item = document.createElement('li'), a = document.createElement('a'), p = document.createElement('p')
+      a.href = data.url
+      a.textContent = data.meta.title
+      // Treat source prose as text, including any apparent HTML in an indexed passage.
+      p.textContent = data.meta.description
+      item.append(a, p)
+      results.append(item)
+    }
+    more.hidden = offset >= matches.length
+    more.disabled = false
+  }
+  try {
+    const pagefind = await import(/* @vite-ignore */ `${base}/pagefind/pagefind.js`)
+    await pagefind.options({ baseUrl: `${base}/` })
+    const facets = await pagefind.filters() as Record<string, Record<string, number>>
+    for (const select of form.querySelectorAll('select')) {
+      for (const [value, count] of Object.entries(facets[select.name] ?? {}).sort()) {
+        const option = document.createElement('option')
+        option.value = value; option.textContent = `${value} (${count})`
+        select.append(option)
+      }
+      select.value = params.get(select.name) ?? ''
+    }
+    const search = async () => {
+      const version = ++generation
+      const fields = new FormData(form), filters: Record<string, string> = {}
+      const url = new URL(location.href); url.search = ''
+      for (const [key, value] of fields) if (String(value).trim()) {
+        url.searchParams.set(key, String(value).trim())
+        if (key !== 'q') filters[key] = String(value)
+      }
+      history.replaceState(null, '', url)
+      status.textContent = 'Searching…'; more.hidden = true
+      const response = await pagefind.search(query.value.trim() || null, { filters })
+      if (version !== generation) return
+      matches = response.results; offset = 0; results.replaceChildren()
+      status.textContent = `${matches.length} results`
+      await append(version)
+    }
+    form.addEventListener('submit', event => { event.preventDefault(); void search().catch(error => { status.textContent = String(error) }) })
+    more.addEventListener('click', () => void append(generation))
+    if (params.size) await search()
+    else status.textContent = 'Enter a query or choose a filter.'
+  } catch {
+    status.textContent = 'Search index unavailable. Run a complete build and serve it over HTTP to use search.'
+  }
+</script>

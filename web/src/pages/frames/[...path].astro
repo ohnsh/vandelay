@@ -1,0 +1,46 @@
+---
+import Layout from '../../layouts/Layout.astro'
+import { publication } from '../../lib/snapshot'
+import { withBase, timeLabel, type Frame } from '../../lib/model'
+export function getStaticPaths() {
+  return publication.days.flatMap(day => day.sources.flatMap(source => {
+    const frames = day.frames.filter(f => f.source === source.slot)
+    return Array.from({ length: Math.ceil(frames.length / 100) }, (_, i) => ({
+      params: { path: `${day.scope.day}/${source.slot}/${i + 1}` },
+      props: { date: day.scope.day, timezone: day.scope.timezone, source: source.slot,
+        frames: frames.slice(i * 100, (i + 1) * 100), page: i + 1, pages: Math.ceil(frames.length / 100) },
+    }))
+  }))
+}
+interface Props { date: string; timezone: string; source: string; frames: Frame[]; page: number; pages: number }
+const { date, timezone, source, frames, page, pages } = Astro.props
+const route = (n: number) => withBase(`/frames/${date}/${source}/${n}/`)
+---
+<Layout title={`${source} captures · ${date}`}>
+  <div class="day-heading"><div><a href={withBase(`/days/${date}/`)}>← {date}</a><h1>Captured moments</h1><p>{source} · {timezone}</p></div></div>
+  <nav class="pagination" aria-label="Capture pages">
+    {page > 1 && <a href={route(page - 1)}>← Previous</a>}
+    <span>Page {page} of {pages}</span>
+    {page < pages && <a href={route(page + 1)}>Next →</a>}
+  </nav>
+  <p class="muted">Previews are prepared for cited Daycap samples and selected Dayflow contextual frames. Other capture metadata remains browsable.</p>
+  <div class="frame-grid">
+    {frames.map(frame => <article id={frame.anchor} class="frame">
+      <header><a href={`#${frame.anchor}`}>{timeLabel(frame.time, timezone)}</a><span>{frame.app}</span></header>
+      {frame.preview ? <a class="preview-link" href={withBase(frame.preview)} aria-label="Open larger frame">
+        <img src={withBase(frame.preview)} alt={`Archived capture at ${frame.at}`} loading="lazy" width="1280" height="720" />
+      </a> : <div class="unavailable">{frame.previewStatus}</div>}
+      <p class="muted">{frame.disposition} · {frame.previewStatus}</p>
+      <details><summary>Frame identity & timing</summary>
+        <dl><dt>Record</dt><dd><code>{frame.recordID}</code></dd>
+          <dt>Revision</dt><dd>{frame.revision ?? 'Not supplied'}</dd>
+          <dt>Wall time</dt><dd>{frame.at}</dd>
+          <dt>Source SHA-256</dt><dd><code>{frame.media?.sha256 ?? 'Unavailable'}</code></dd>
+          <dt>Frame index</dt><dd>{frame.frameIndex ?? 'Still image'}</dd>
+          <dt>Source presentation time</dt><dd>{frame.presentation ? `${frame.presentation.value} / ${frame.presentation.timescale} seconds` : 'Not supplied'}</dd>
+        </dl>
+      </details>
+    </article>)}
+  </div>
+  <nav class="pagination" aria-label="Capture pages bottom">{page > 1 && <a href={route(page - 1)}>← Previous</a>}<span>{page} / {pages}</span>{page < pages && <a href={route(page + 1)}>Next →</a>}</nav>
+</Layout>

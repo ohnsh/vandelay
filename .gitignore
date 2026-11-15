@@ -1,2 +1,8 @@
 node_modules/
 data/
+web/.astro/
+web/.data/
+web/.cache/
+web/dist/
+web/.dist-*/
+web/test-results/

@@ -1,0 +1,29 @@
+---
+import { publication } from '../lib/snapshot'
+import { withBase } from '../lib/model'
+import '../styles/site.css'
+interface Props { title: string }
+const { title } = Astro.props
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={publication.generator} />
+    <title>{title} · did</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="wordmark" href={withBase('/')}>did<span>.</span></a>
+      <span class="tagline">A record of the day</span>
+      <nav aria-label="Site"><a href={withBase('/')}>Archive</a><a href={withBase('/search/')}>Search</a></nav>
+    </header>
+    <main><slot /></main>
+    <footer class="site-footer">
+      <span>Static archive · <code title={publication.commit}>{publication.commit.slice(0, 12)}</code></span>
+      <a href={withBase('/publication.json')}>Publication manifest</a>
+      <span>Archive verified · signature {publication.verification.signature} · timestamp {publication.verification.timestamp}</span>
+    </footer>
+  </body>
+</html>

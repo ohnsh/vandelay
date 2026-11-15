@@ -1,0 +1,103 @@
+---
+import Layout from '../../layouts/Layout.astro'
+import Entry from '../../components/Entry.astro'
+import { publication } from '../../lib/snapshot'
+import { withBase, type DayView, type Track } from '../../lib/model'
+export function getStaticPaths() {
+  return publication.days.map(day => ({ params: { day: day.scope.day }, props: { day } }))
+}
+interface Props { day: DayView }
+const { day } = Astro.props
+const index = publication.days.findIndex(d => d.scope.day === day.scope.day)
+const sections: { track: Track; label: string; open: boolean }[] = [
+  { track: 'activity', label: 'Activities', open: true },
+  { track: 'observation', label: 'Observations', open: false },
+  { track: 'window', label: 'App & window events', open: true },
+  { track: 'afk', label: 'AFK status', open: false },
+  { track: 'recording', label: 'Recordings', open: true },
+  { track: 'gap', label: 'Capture gaps', open: false },
+  { track: 'other', label: 'Analysis & source records', open: false },
+]
+const associated = day.entries.filter(e => ['day', 'unknown'].includes(e.time.model) || e.track === 'report')
+---
+<Layout title={day.scope.day}>
+  <div class="day-heading">
+    <div><div class="eyebrow">Daily record / {day.scope.timezone}</div><h1>{day.scope.day}</h1></div>
+    <nav aria-label="Adjacent days" class="day-nav">
+      {publication.days[index - 1] && <a href={withBase(`/days/${publication.days[index - 1].scope.day}/`)}>← Previous</a>}
+      <a href={withBase('/')}>Calendar</a>
+      {publication.days[index + 1] && <a href={withBase(`/days/${publication.days[index + 1].scope.day}/`)}>Next →</a>}
+    </nav>
+  </div>
+  <div class="day-layout">
+    <aside class="day-sidebar">
+      <label>Source / instance<select id="source-filter"><option value="">All sources</option>{day.sources.map(s => <option value={s.slot}>{s.slot}</option>)}</select></label>
+      <nav aria-label="Day tracks">
+        {associated.length > 0 && <a href="#overview" data-track-link="overview">Day overview <span data-count-for="overview">{associated.length}</span></a>}
+        {sections.map(s => {
+          const count = day.entries.filter(e => e.track === s.track && !associated.includes(e)).length
+          return count > 0 && <a href={`#${s.track}`} data-track-link={s.track}>{s.label}<span data-count-for={s.track}>{count}</span></a>
+        })}
+      </nav>
+      <h2>Captures</h2>
+      {day.sources.map(source => {
+        const count = day.frames.filter(f => f.source === source.slot).length
+        return count > 0 && <a class="capture-nav" href={withBase(`/frames/${day.scope.day}/${source.slot}/1/`)}>{source.slot}<span>{count.toLocaleString('en-US')} frames →</span></a>
+      })}
+      <p class="muted">Sources remain separate accounts. Overlapping cards are not merged or summed as time worked.</p>
+    </aside>
+    <div class="day-content">
+      {associated.length > 0 && <section id="overview" data-entry-group><h2>Day overview</h2>{associated.map(entry => <Entry entry={entry} timezone={day.scope.timezone} />)}</section>}
+      {sections.map(section => {
+        const entries = day.entries.filter(e => e.track === section.track && !associated.includes(e))
+        return entries.length > 0 && <details class="track" id={section.track} open={section.open} data-entry-group>
+          <summary><h2>{section.label}</h2><span data-count-for={section.track}>{entries.length}</span></summary>
+          {entries.map(entry => <Entry entry={entry} timezone={day.scope.timezone} />)}
+        </details>
+      })}
+      <details class="coverage"><summary>Collection coverage & limitations</summary>
+        {day.sources.map(source => <section><h3>{source.slot} · {source.count} records</h3>
+          <ul>{source.limitations.map(limit => <li>{limit}</li>)}</ul>
+          <code>{source.manifest}</code><br /><code>{source.sha256}</code>
+        </section>)}
+      </details>
+    </div>
+  </div>
+</Layout>
+<script>
+  const filter = document.querySelector<HTMLSelectElement>('#source-filter')!
+  const apply = () => {
+    for (const article of document.querySelectorAll<HTMLElement>('[data-source]'))
+      article.hidden = !!filter.value && article.dataset.source !== filter.value
+    for (const group of document.querySelectorAll<HTMLElement>('[data-entry-group]')) {
+      const count = group.querySelectorAll('.entry:not([hidden])').length
+      group.hidden = count === 0
+      for (const label of document.querySelectorAll(`[data-count-for="${group.id}"]`))
+        label.textContent = String(count)
+      const link = document.querySelector<HTMLElement>(`[data-track-link="${group.id}"]`)
+      if (link) link.hidden = count === 0
+    }
+    const url = new URL(location.href)
+    if (filter.value) url.searchParams.set('source', filter.value)
+    else url.searchParams.delete('source')
+    history.replaceState(null, '', url)
+  }
+  filter.value = new URL(location.href).searchParams.get('source') ?? ''
+  filter.addEventListener('change', apply)
+  apply()
+  const reveal = () => {
+    const id = decodeURIComponent(location.hash.slice(1))
+    const target = document.getElementById(id)
+    if (!target) return
+    const entry = target.closest<HTMLElement>('[data-source]')
+    if (entry?.hidden) { filter.value = ''; apply() }
+    let parent: HTMLElement | null = target
+    while (parent) {
+      if (parent instanceof HTMLDetailsElement) parent.open = true
+      parent = parent.parentElement
+    }
+    requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }))
+  }
+  window.addEventListener('hashchange', reveal)
+  reveal()
+</script>

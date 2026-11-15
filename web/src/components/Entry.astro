@@ -1,0 +1,59 @@
+---
+import type { Entry } from '../lib/model'
+import { timeLabel, timeBasis, withBase } from '../lib/model'
+import MediaPlayer from './MediaPlayer'
+interface Props { entry: Entry; timezone: string }
+const { entry: e, timezone } = Astro.props
+const links = e.links
+---
+<article id={e.anchor} class:list={['entry', `track-${e.track}`]} data-source={e.source} data-track={e.track}>
+  <header class="entry-header">
+    <div class="eyebrow">{e.source} {e.category && <span> / {e.category}</span>}</div>
+    <h3><a href={`#${e.anchor}`}>{e.title}</a></h3>
+    <div class="entry-time" title={JSON.stringify(e.time)}>
+      {timeLabel(e.placement, timezone)} <span>{timeBasis(e.time)}</span>
+    </div>
+  </header>
+  {e.text && <p class="prose">{e.text}</p>}
+  {(e.app || e.apps.length > 0) && <div class="apps">
+    {e.apps.length > 0 && <span>Sampled foreground</span>}
+    {[...new Set([e.app, ...e.apps].filter(Boolean))].map(app => <span class="app"><span class="app-icon" aria-hidden="true">{app!.slice(0, 1)}</span>{app}</span>)}
+  </div>}
+  {e.clip && <details class="media-disclosure"><summary>Play timelapse <span>· {e.clip.frames.length} frames</span></summary>
+    <MediaPlayer clip={e.clip} timezone={timezone} base={import.meta.env.BASE_URL} client:visible />
+  </details>}
+  {e.mediaStatus && <p class="muted">{e.mediaStatus}</p>}
+  {e.recordings?.map(media => <div class="recording-reference">
+    {media.url && <a href={media.url} rel="noreferrer">Open recording ↗</a>}
+    <details class="provenance"><summary>Recording identity · {(media.bytes / 1048576).toFixed(1)} MiB</summary>
+      <code>{media.sha256}</code>
+    </details>
+  </div>)}
+  {e.details.length > 0 && <details class="details-disclosure">
+    <summary>Detailed timeline <span>· {e.details.length} {e.details.length === 1 ? 'entry' : 'entries'}</span></summary>
+    <ol class="detail-list">
+      {e.details.map(detail => <li id={detail.anchor}>
+        <a class="detail-permalink" href={`#${detail.anchor}`} aria-label="Link to detail">#</a>
+        {detail.time && <div class="entry-time" title={JSON.stringify(detail.time)}>{timeLabel(detail.time, timezone)}</div>}
+        <p class="prose">{detail.text}</p>
+        {detail.supports.length > 0 && <ul class="source-links" aria-label="Supporting captures">
+          {detail.supports.map(link => <li>
+            {link.href ? <a href={withBase(link.href)}>↗ {link.label.replace('capture/', '').slice(0, 8)} · revision {link.revision ?? 'unspecified'}</a> :
+              <span title={link.id}>{link.label.slice(0, 20)} · {link.status} {link.revision && `(revision ${link.revision})`}</span>}
+          </li>)}
+        </ul>}
+      </li>)}
+    </ol>
+  </details>}
+  {e.attribution && <p class="muted attribution">{e.attribution}</p>}
+  {links.length > 0 && <ul class="source-links">
+    {links.map(link => <li>{link.href ? <a href={withBase(link.href)}>{link.label}</a> : <span>{link.label} · {link.status}</span>}</li>)}
+  </ul>}
+  <details class="provenance">
+    <summary>Source & provenance</summary>
+    <p>{e.provenance}</p>
+    <dl><dt>Record</dt><dd><code>{e.recordID}</code></dd><dt>Original time</dt><dd><code>{JSON.stringify(e.time)}</code></dd>
+      {e.evidence && <><dt>Evidence locator</dt><dd><code>{JSON.stringify(e.evidence)}</code></dd></>}
+    </dl>
+  </details>
+</article>
