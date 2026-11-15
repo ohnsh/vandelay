@@ -13,8 +13,8 @@ subdirectory should also be kept relevant and maintained, but in general, ask
 before removing or overwriting historical notes there. (No specific permission
 is needed to maintain the rest of `agent-notes/`.)
 
-It's okay to create a top-level README.md, but keep it very brief, and avoid
-modifying human-authored sections without asking first.
+Instead of creating or maintaining a top-level README.md, please keep usage
+instructions at `agent-notes/usage.md`.
 
 ### Persistent agent context
 
