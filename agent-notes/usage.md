@@ -1,5 +1,13 @@
 # did
 
+- Updated: 2026-11-15. Source commit: `f6704667bf9b32d4de7ce4e52cf1a76320985a8b`.
+- Status: observation; maintained usage reference.
+- Evidence: [`src/cli.ts`](../src/cli.ts), [`src/repository.ts`](../src/repository.ts),
+  [`package.json`](../package.json), and collector/repository tests in [`test/`](../test/).
+- Limits: commands assume the source repository root as the working directory.
+  Signing, timestamps, and media depend on local tools and configuration; revisit
+  these instructions when CLI defaults, archive schemas, or tool requirements change.
+
 Collect daily activity into ordinary files, version them with Git, sign commits
 with Git, and timestamp signed commits with OpenTimeStamps.
 
@@ -117,7 +125,7 @@ one timezone per date; a conflicting scope is rejected.
   activities, and withdrawals become `did.record/v1` records. Media is verified and
   copied to the external content-addressed archive. `references.json` is a
   deterministic dependency index rebuilt during verification. See
-  [Daycap mapping and limitations](docs/daycap.md).
+  [Daycap mapping and limitations](daycap.md).
 - **VOD filesystem:** reads `YYYY-MM/DD/_camera/file.{mp4,mov,m4a,opus}`.
   `--vod-config` supports timezone, source timing rules, timelapse wall duration,
   and per-object timestamp overrides as in Vandelay. `--camera name` is repeatable;
@@ -135,7 +143,7 @@ Records use the `did.record/v1` envelope with a discriminated `time.model`:
 `instant`, `interval`, `bounds`, `day`, or `unknown`. Original times remain intact;
 `placement` supplies a derived day projection. Reports keep explicit calendar
 associations rather than fabricated day-long intervals. See the
-[record envelope specification](docs/record-envelope.md).
+[record envelope notes](record-envelope.md).
 
 Timed records preserve microsecond timestamps and half-open day bounds. DST days
 are calendar days, not assumed to be 24 hours. Unsafe SQLite integers fail rather
@@ -314,7 +322,7 @@ matters: branch names and valid old snapshots do not establish which is latest.
 
 ## Static web publication
 
-The [`web/` workspace package](web/README.md) builds a calendar, multi-source daily
+The [`web/` workspace package](web.md) builds a calendar, multi-source daily
 timelines, capture galleries, sample timelapses and Pagefind search from a pinned
 data-repository commit:
 
@@ -326,7 +334,7 @@ bun run --cwd web preview --port 4324
 
 The result is a self-contained static site in `web/dist/`. Media preparation uses
 the external did archive and FFmpeg; use `--media none` for a text-only build.
-See the package README for selection, media URLs, subpath hosting and verification.
+See [web publication](web.md) for selection, media URLs, subpath hosting and verification.
 
 ## Development
 

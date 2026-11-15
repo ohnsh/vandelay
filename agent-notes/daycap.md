@@ -1,5 +1,16 @@
 # Daycap collector
 
+- Updated: 2026-11-15. Source commit: `f6704667bf9b32d4de7ce4e52cf1a76320985a8b`.
+- Status: observation of the implemented importer and its limits.
+- Evidence: [`src/daycap.ts`](../src/daycap.ts),
+  [`src/repository.ts`](../src/repository.ts), and
+  [`test/daycap.test.ts`](../test/daycap.test.ts).
+- Limits: applies to `daycap.export/v2` and adapter `daycap/2`; revisit if the
+  producer schema, identity rules, or reference resolution changes. Producer
+  completeness and frame-to-wall-time accuracy are not independently established.
+
+Run commands from the source repository root.
+
 ```sh
 bun run did collect daycap \
   --day 2026-11-14 --timezone America/Chicago --instance desktop \

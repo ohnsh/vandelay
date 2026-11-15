@@ -1,5 +1,13 @@
 # Record envelope
 
+- Updated: 2026-11-15. Source commit: `f6704667bf9b32d4de7ce4e52cf1a76320985a8b`.
+- Status: observation of implemented semantics and design rationale.
+- Evidence: [`src/model.ts`](../src/model.ts),
+  [`src/repository.ts`](../src/repository.ts),
+  [`test/model.test.ts`](../test/model.test.ts), and collector tests in [`test/`](../test/).
+- Limits: describes the v1 envelope, not a complete source-payload schema.
+  Recheck against validators and adapter mappings when schemas or membership rules change.
+
 Implemented schema: `did.record/v1`, in `did.bundle/v1` source bundles.
 This replaces the initial Vandelay-derived envelope; there is no legacy reader or
 automatic migration. Regenerate existing uncommitted collections into a fresh data
@@ -44,7 +52,7 @@ over reserved envelope fields.
 Neither can override identity, time, schema or placement. Optional titles and text
 avoid requiring fake empty prose for captures or attachments. Future typed payload
 schemas can be added independently of the envelope. The source list includes
-ActivityWatch, Dayflow, Daycap and VOD; email/chat collectors are future work.
+ActivityWatch, Dayflow, Daycap and VOD.
 
 ## Discriminated time union
 
@@ -121,22 +129,6 @@ The same report in November 13 has identical `id` and `time`, but placement role
 `["report-day"]`. Its generation timestamp, if supplied, remains in source data;
 it does not replace the report/source-day associations.
 
-Future email adapter input:
-
-```ts
-record({
-  id: 'message:example-id',
-  kind: 'email.message',
-  time: {
-    model: 'instant',
-    at: '2026-11-12T14:23:10Z',
-    basis: 'sent-at',
-  },
-  title: 'Archive format discussion',
-  data: { /* typed email payload: participants, thread, body, attachments */ },
-}, bounds)
-```
-
 ## Membership, clipping and rendering
 
 - UTC RFC 3339 timestamps are normalized to exactly six fractional digits.
@@ -158,10 +150,6 @@ record({
   records, then unknown-time records; ties use kind and ID. This deterministic file
   ordering is not a claim that day-associated content occurred after timed content.
   Render day-associated items in a day header/sidebar and unknown items separately.
-
-A future generic timeline can render these projections without knowing the source,
-while specialized views use `kind` and the payload. Message threads and attachments
-need not be flattened into activity cards.
 
 ## Collector mapping
 

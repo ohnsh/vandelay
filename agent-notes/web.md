@@ -1,5 +1,15 @@
 # did web
 
+- Updated: 2026-11-15. Source commit: `f6704667bf9b32d4de7ce4e52cf1a76320985a8b`.
+- Status: observation; publication usage and implementation constraints.
+- Evidence: [`web/package.json`](../web/package.json),
+  [`web/scripts/`](../web/scripts/), [`web/src/lib/`](../web/src/lib/),
+  and [`web/test/`](../web/test/).
+- Limits: commands below run from `web/` unless stated otherwise; code and output
+  paths in this note are relative to that package unless prefixed with `web/`.
+  Example commit IDs require the original local data repository; substitute a
+  commit from your archive. Revisit on build, projection, or media-recipe changes.
+
 Static publication of a pinned did archive snapshot. Astro renders the calendar,
 day tracks and capture pages; React enhances timelapse playback; Pagefind searches
 activity summaries, detail passages, observations, reports and app/window events.
@@ -167,8 +177,7 @@ Whole source videos, which can contain footage outside the selected day, are not
 copied to the site.
 
 The current prototype fully rebuilds HTML and Pagefind. Its media cache survives
-rebuilds and is safe to delete. Incremental HTML/search caching can be added after
-measuring larger archives.
+rebuilds and is safe to delete.
 
 ## Provenance and publication
 
@@ -214,28 +223,3 @@ Browser tests exercise the locally built publication, including the overlapping
 Daycap/Dayflow day, deep links, search, native video decoding, React frame seeking,
 mobile overflow and no-JavaScript narrative. They block external requests. Run
 with `DID_WEB_BASE=/did` after a subpath build to check project hosting.
-
-## Component sharing and autoredact
-
-The Daycap timeline informed the card/detail/citation presentation. This static
-prototype renders every narrative into addressable HTML; its page structure differs
-from Daycap's selected-card React shell. `src/components/MediaPlayer.tsx` is a pure
-presentation component with data and URL props. The archive adapters live separately
-in `src/lib/project.ts`. There is no dependency on a sibling checkout.
-
-For the next shared package, extract small components used in both hosts:
-time labels, app badges, citation links, media controls and a zoomable frame inspector.
-The frame inspector is also a natural fit for **autoredact**: image, source identity,
-frame selector, display transform and optional detection overlays as input; selection
-and decision callbacks as output.
-
-Autoredact's scanner and mutable review service should keep ownership of scan/report
-validation, report-hash binding, review revisions and persistence. did can eventually
-consume immutable `autoredact.publication/v1` decisions when preparing a publication,
-or render a read-only report beside a candidate artifact. The mutable review host
-could reuse the inspector without becoming a public static route.
-
-No autoredact decisions are applied by this prototype. A future integration must
-match input hashes and carry omission/redaction decisions consistently into HTML,
-search, previews and timelapses. Overlay geometry also needs a declared mapping
-from original pixels to scaled preview pixels before sharing the frame renderer.
