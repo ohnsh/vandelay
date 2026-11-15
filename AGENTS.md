@@ -13,6 +13,9 @@ subdirectory should also be kept relevant and maintained, but in general, ask
 before removing or overwriting historical notes there. (No specific permission
 is needed to maintain the rest of `agent-notes/`.)
 
+It's okay to create a top-level README.md, but keep it very brief, and avoid
+modifying human-authored sections without asking first.
+
 ### Persistent agent context
 
 Save useful agent-generated context in `agent-notes/`, not `docs/`. These notes
