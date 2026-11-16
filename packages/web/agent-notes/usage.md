@@ -2,9 +2,9 @@
 
 - Updated: 2026-11-15. Source commit: `50bf174674c79e1075ebf71334812d1a26abb452` plus workspace migration.
 - Status: observation; publication usage and implementation constraints.
-- Evidence: [`package.json`](../packages/web/package.json),
-  [`scripts/`](../packages/web/scripts/), [`src/lib/`](../packages/web/src/lib/),
-  and [`test/`](../packages/web/test/).
+- Evidence: [`package.json`](../package.json),
+  [`scripts/`](../scripts/), [`src/lib/`](../src/lib/),
+  and [`test/`](../test/).
 - Limits: commands below run from `packages/web/` unless stated otherwise; code and output
   paths in this note are relative to that package unless prefixed with `packages/web/`.
   Example commit IDs require the original local data repository; substitute a
@@ -128,6 +128,8 @@ Git blobs, then projects source-specific payloads:
 
 Original time remains inspectable; day placement controls the visible time label.
 DST scopes and calendar-associated reports retain the archive's existing semantics.
+The canonical [record envelope notes](../../ddb/agent-notes/record-envelope.md)
+describe those shared semantics.
 Overlapping source accounts remain separate; sampled bounds are not accumulated
 as time worked.
 

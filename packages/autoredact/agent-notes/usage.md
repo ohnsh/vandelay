@@ -3,7 +3,8 @@
 - Updated: 2026-11-15. Status: observation; imported scanning/review usage.
 - Source: AutoRedact `c487f4c09740b954ad53d289f305401955b9a943`, imported
   into Vandelay after `50bf174674c79e1075ebf71334812d1a26abb452`.
-- Evidence: `packages/autoredact/src/`, its tests, and package scripts.
+- Evidence: [`src/`](../src/), [`test/`](../test/), and
+  [`package scripts`](../package.json).
 - Limits: commands run from `packages/autoredact/` unless stated otherwise.
   Coverage depends on the configured rules and local media tools.
 
@@ -116,9 +117,11 @@ actual files.
 Requires Bun 1.3+. Media scanning additionally requires macOS, Xcode command-line
 tools (`swiftc`), FFmpeg, and ffprobe. Text-only scanning does not require those tools.
 
-```sh
-bun install --frozen-lockfile
+Install dependencies with `bun install --frozen-lockfile` from the workspace root
+(see [workspace usage](../../../agent-notes/usage.md)), then run the following
+commands from `packages/autoredact/`.
 
+```sh
 # Ordinary files or directories; all JSON string fields and keys are scanned.
 bun run autoredact scan ./publication
 

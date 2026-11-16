@@ -2,9 +2,9 @@
 
 - Updated: 2026-11-15. Source commit: `f6704667bf9b32d4de7ce4e52cf1a76320985a8b`.
 - Status: observation of implemented semantics and design rationale.
-- Evidence: [`src/model.ts`](../packages/ddb/src/model.ts),
-  [`src/repository.ts`](../packages/ddb/src/repository.ts),
-  [`test/model.test.ts`](../packages/ddb/test/model.test.ts), and collector tests in [`test/`](../packages/ddb/test/).
+- Evidence: [`src/model.ts`](../src/model.ts),
+  [`src/repository.ts`](../src/repository.ts),
+  [`test/model.test.ts`](../test/model.test.ts), and collector tests in [`test/`](../test/).
 - Limits: describes the v1 envelope, not a complete source-payload schema.
   Recheck against validators and adapter mappings when schemas or membership rules change.
 
