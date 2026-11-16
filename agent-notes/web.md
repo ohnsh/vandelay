@@ -1,16 +1,16 @@
-# did web
+# Vandelay web
 
-- Updated: 2026-11-15. Source commit: `f6704667bf9b32d4de7ce4e52cf1a76320985a8b`.
+- Updated: 2026-11-15. Source commit: `50bf174674c79e1075ebf71334812d1a26abb452` plus workspace migration.
 - Status: observation; publication usage and implementation constraints.
-- Evidence: [`web/package.json`](../web/package.json),
-  [`web/scripts/`](../web/scripts/), [`web/src/lib/`](../web/src/lib/),
-  and [`web/test/`](../web/test/).
-- Limits: commands below run from `web/` unless stated otherwise; code and output
-  paths in this note are relative to that package unless prefixed with `web/`.
+- Evidence: [`package.json`](../packages/web/package.json),
+  [`scripts/`](../packages/web/scripts/), [`src/lib/`](../packages/web/src/lib/),
+  and [`test/`](../packages/web/test/).
+- Limits: commands below run from `packages/web/` unless stated otherwise; code and output
+  paths in this note are relative to that package unless prefixed with `packages/web/`.
   Example commit IDs require the original local data repository; substitute a
   commit from your archive. Revisit on build, projection, or media-recipe changes.
 
-Static publication of a pinned did archive snapshot. Astro renders the calendar,
+Static publication of a pinned Vandelay archive snapshot. Astro renders the calendar,
 day tracks and capture pages; React enhances timelapse playback; Pagefind searches
 activity summaries, detail passages, observations, reports and app/window events.
 Visitors need only a static HTTP host.
@@ -23,14 +23,14 @@ Install from the workspace root:
 bun install --frozen-lockfile
 ```
 
-Then, from `web/`:
+Then, from `packages/web/`:
 
 ```sh
-bun run build --commit ddc9dd39ced26
+bun run build --commit HEAD
 bun run preview --port 4324
 ```
 
-Open **http://localhost:4324**. Output is `web/dist/`. Building does not deploy it.
+Open **http://localhost:4324**. Output is `packages/web/dist/`. Building does not deploy it.
 Publish the entire directory as one artifact, including `pagefind/`, `media/` and
 `publication.json`. The site needs HTTP; Pagefind and module loading do not work
 reliably from `file://`.
@@ -43,7 +43,7 @@ databases, network media downloads, or model calls are needed.
 
 ```sh
 # Text/metadata-only build; useful when media or FFmpeg is unavailable.
-bun run build --commit ddc9dd39ced26 --media none
+bun run build --commit HEAD --media none
 
 # Publish a selected day from another data repository.
 bun run build --repo /path/to/archive --commit COMMIT \
@@ -56,8 +56,8 @@ bun run build --commit SIGNED_COMMIT --signature
 bun run build --commit COMMIT --media-urls /path/to/media-urls.json
 ```
 
-`--day` is repeatable. Defaults are `--repo ../data`, `--commit HEAD`,
-`--media selected`, and `--media-archive ~/.local/share/did/media`. HEAD is resolved
+`--day` is repeatable. Defaults are `--repo ../../data`, `--commit HEAD`,
+`--media selected`, and `--media-archive ~/.local/share/vandelay/media`. HEAD is resolved
 once to a full commit ID before reading anything. The checked-out working files
 are never publication inputs.
 
@@ -75,11 +75,11 @@ Recordings without configured URLs still show their timing, identity and byte si
 ### Domain subpaths
 
 ```sh
-DID_WEB_BASE=/did bun run build --commit ddc9dd39ced26
-DID_WEB_BASE=/did bun run preview --port 4324
+VANDELAY_WEB_BASE=/vandelay bun run build --commit HEAD
+VANDELAY_WEB_BASE=/vandelay bun run preview --port 4324
 ```
 
-Visit `http://localhost:4324/did/`. Use the same base for build and preview.
+Visit `http://localhost:4324/vandelay/`. Use the same base for build and preview.
 All generated navigation, React media URLs and search results respect it.
 
 ### UI development
@@ -116,7 +116,7 @@ by Daycap's native host.
 
 ## Archive semantics
 
-The build verifies each selected day through did's existing verifier, reads exact
+The build verifies each selected day through Vandelay's verifier, reads exact
 Git blobs, then projects source-specific payloads:
 
 | Source | Presentation treatment |
@@ -127,7 +127,7 @@ Git blobs, then projects source-specific payloads:
 | VOD | Recording intervals, object identities, optional external playback links |
 
 Original time remains inspectable; day placement controls the visible time label.
-DST scopes and calendar-associated reports retain did's existing semantics.
+DST scopes and calendar-associated reports retain the archive's existing semantics.
 Overlapping source accounts remain separate; sampled bounds are not accumulated
 as time worked.
 
@@ -222,4 +222,4 @@ and missing media.
 Browser tests exercise the locally built publication, including the overlapping
 Daycap/Dayflow day, deep links, search, native video decoding, React frame seeking,
 mobile overflow and no-JavaScript narrative. They block external requests. Run
-with `DID_WEB_BASE=/did` after a subpath build to check project hosting.
+with `VANDELAY_WEB_BASE=/vandelay` after a subpath build to check project hosting.

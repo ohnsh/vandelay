@@ -2,13 +2,13 @@
 
 - Updated: 2026-11-15. Source commit: `f6704667bf9b32d4de7ce4e52cf1a76320985a8b`.
 - Status: observation of implemented semantics and design rationale.
-- Evidence: [`src/model.ts`](../src/model.ts),
-  [`src/repository.ts`](../src/repository.ts),
-  [`test/model.test.ts`](../test/model.test.ts), and collector tests in [`test/`](../test/).
+- Evidence: [`src/model.ts`](../packages/ddb/src/model.ts),
+  [`src/repository.ts`](../packages/ddb/src/repository.ts),
+  [`test/model.test.ts`](../packages/ddb/test/model.test.ts), and collector tests in [`test/`](../packages/ddb/test/).
 - Limits: describes the v1 envelope, not a complete source-payload schema.
   Recheck against validators and adapter mappings when schemas or membership rules change.
 
-Implemented schema: `did.record/v1`, in `did.bundle/v1` source bundles.
+Implemented schema: `vandelay.record/v1`, in `vandelay.bundle/v1` source bundles.
 This replaces the initial Vandelay-derived envelope; there is no legacy reader or
 automatic migration. Regenerate existing uncommitted collections into a fresh data
 repository. The files in an existing repository are not rewritten implicitly.
@@ -89,7 +89,7 @@ Screenshot:
 
 ```json
 {
-  "schema": "did.record/v1",
+  "schema": "vandelay.record/v1",
   "id": "screenshots:20068",
   "kind": "dayflow.screenshots",
   "time": {
@@ -109,7 +109,7 @@ here in the November 12 bundle:
 
 ```json
 {
-  "schema": "did.record/v1",
+  "schema": "vandelay.record/v1",
   "id": "report:2026-11-13:1",
   "kind": "dayflow.report",
   "time": {
@@ -170,11 +170,11 @@ equal endpoints do not erase their meaning.
 
 ## Validation and versioning
 
-Source manifests declare `record_schema: "did.record/v1"` and adapter version `/2`.
+Source manifests declare `record_schema: "vandelay.record/v1"` and adapter version `/2`.
 The bundle inventory contains `evidence.json` and `records.jsonl`, plus a derived
 `references.json` for Daycap. Hashes cover stored bytes; Daycap evidence preserves
-the original export manifest bytes, while derived payloads use did's deterministic serializer. `did.day/v1`, Git
-signatures, and OpenTimeStamps are unchanged.
+the original export manifest bytes, while derived payloads use Vandelay's deterministic serializer.
+Day manifests use `vandelay.day/v1`; Git signatures and OpenTimeStamps retain their existing semantics.
 
 Collection validates records before writing. Verification validates JSONL envelopes,
 unique IDs, canonical time, membership and exact derived placement after checking

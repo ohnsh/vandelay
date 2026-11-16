@@ -1,9 +1,9 @@
-# did
+# Vandelay
 
-- Updated: 2026-11-15. Source commit: `f6704667bf9b32d4de7ce4e52cf1a76320985a8b`.
+- Updated: 2026-11-15. Source commit: `50bf174674c79e1075ebf71334812d1a26abb452` plus workspace migration.
 - Status: observation; maintained usage reference.
-- Evidence: [`src/cli.ts`](../src/cli.ts), [`src/repository.ts`](../src/repository.ts),
-  [`package.json`](../package.json), and collector/repository tests in [`test/`](../test/).
+- Evidence: [`CLI`](../packages/ddb/src/cli.ts), [`repository`](../packages/ddb/src/repository.ts),
+  [`package.json`](../package.json), and collector/repository tests in [`packages/ddb/test/`](../packages/ddb/test/).
 - Limits: commands assume the source repository root as the working directory.
   Signing, timestamps, and media depend on local tools and configuration; revisit
   these instructions when CLI defaults, archive schemas, or tool requirements change.
@@ -12,11 +12,20 @@ Collect daily activity into ordinary files, version them with Git, sign commits
 with Git, and timestamp signed commits with OpenTimeStamps.
 
 The ActivityWatch, Dayflow and VOD collectors and normalization utilities are
-migrated from `../vandelay`. Git replaces the immutable archive store, day revision
+migrated from the predecessor Vandelay implementation. Git replaces the immutable archive store, day revision
 chain, composition command and custom signature envelopes.
 The Daycap collector imports verified `daycap.export/v2` export directories.
 
 ## Setup
+
+The root workspace is `vandelay`. Packages are `@vandelay/ddb` (the `ddb`
+executable), `@vandelay/web`, and `@vandelay/autoredact`. Install at the root;
+`bun run check` and `bun run test` run each package's checks in its own directory.
+Cross-package imports use package exports and `workspace:*` dependencies.
+
+Archive schemas, media paths, and web environment variables use `vandelay`.
+This is a clean format break: regenerate disposable collections in a fresh data
+repository rather than mixing old and new manifests.
 
 Requires Bun 1.3+, Git, and macOS or Linux. Optional tools:
 
@@ -26,7 +35,7 @@ Requires Bun 1.3+, Git, and macOS or Linux. Optional tools:
 
 ```sh
 bun install --frozen-lockfile
-bun run did init
+bun run ddb init
 ```
 
 This creates a dedicated **data repository** at `./data`, ignored by this source
@@ -43,11 +52,11 @@ git -C data config user.email 'you@example.com'
 git -C data config gpg.format ssh
 git -C data config user.signingkey ~/.ssh/vandelay-primary
 git -C data config commit.gpgsign true
-git -C data config gpg.ssh.allowedSignersFile ~/.ssh/did_allowed_signers
+git -C data config gpg.ssh.allowedSignersFile ~/.ssh/vandelay_allowed_signers
 ```
 
 Use an existing SSH signing key or create a dedicated software key with
-`ssh-keygen -t ed25519 -f ~/.ssh/did-signing` and configure its path instead.
+`ssh-keygen -t ed25519 -f ~/.ssh/vandelay-signing` and configure its path instead.
 The existing Vandelay hardware credential also works with FIDO-capable OpenSSH.
 On macOS, install it with `brew install openssh` and put its `bin` directory first
 on PATH (or configure Git's `gpg.ssh.program` to its `ssh-keygen`).
@@ -59,26 +68,26 @@ you@example.com ssh-ed25519 AAAA...your-public-key...
 ```
 
 For a hardware key, use its actual `sk-ssh-ed25519@openssh.com` type and public
-key bytes. Git uses its standard trust policy; did does not implement Vandelay's
+key bytes. Git uses its standard trust policy; ddb does not implement the predecessor's
 additional FIDO UP/UV flag checks. No private keys live in the data repository.
 
 ## Collect
 
 ```sh
-bun run did collect activitywatch \
+bun run ddb collect activitywatch \
   --day 2026-11-12 --timezone America/Chicago --instance mak \
   --aw-host mak.local
 
-bun run did collect dayflow \
+bun run ddb collect dayflow \
   --day 2026-11-12 --timezone America/Chicago --instance mak \
-  --media-archive ~/.local/share/did/media
+  --media-archive ~/.local/share/vandelay/media
 
-bun run did collect daycap \
+bun run ddb collect daycap \
   --day 2026-11-14 --timezone America/Chicago --instance desktop \
   --daycap-export /path/to/daycap-export \
-  --media-archive ~/.local/share/did/media
+  --media-archive ~/.local/share/vandelay/media
 
-bun run did collect vod \
+bun run ddb collect vod \
   --day 2026-11-12 --timezone America/Chicago --instance media-days \
   --vod-root /Volumes/Media/days --vod-config ../vod/vod.config.json
 ```
@@ -122,7 +131,7 @@ one timezone per date; a conflicting scope is rejected.
   `manifest.json`, `manifest.sha256`, and inventoried media. An explicit stable
   `--instance` identifies the source store. Original manifest bytes become
   `evidence.json`; captures, Journal notes/cards/analyses/gaps, Evidence analyses/
-  activities, and withdrawals become `did.record/v1` records. Media is verified and
+  activities, and withdrawals become `vandelay.record/v1` records. Media is verified and
   copied to the external content-addressed archive. `references.json` is a
   deterministic dependency index rebuilt during verification. See
   [Daycap mapping and limitations](daycap.md).
@@ -139,7 +148,7 @@ one timezone per date; a conflicting scope is rejected.
   claims; remote existence is not inferred. There is no live catalog downloader,
   SQL dump restore or remote media fetcher.
 
-Records use the `did.record/v1` envelope with a discriminated `time.model`:
+Records use the `vandelay.record/v1` envelope with a discriminated `time.model`:
 `instant`, `interval`, `bounds`, `day`, or `unknown`. Original times remain intact;
 `placement` supplies a derived day projection. Reports keep explicit calendar
 associations rather than fabricated day-long intervals. See the
@@ -151,7 +160,7 @@ than round.
 
 ### Dayflow media archive
 
-`--media-archive` defaults to `~/.local/share/did/media`. It must live outside Git
+`--media-archive` defaults to `~/.local/share/vandelay/media`. It must live outside Git
 repositories and outside the source Dayflow database directory. Back this directory
 up separately: Git contains references, not media bytes. References are relative,
 so the archive can be relocated without changing signed records.
@@ -183,12 +192,12 @@ No redaction or frame removal is performed.
 ## Verify and sign a snapshot
 
 ```sh
-bun run did verify 2026-11-12
+bun run ddb verify 2026-11-12
 git -C data diff
 git -C data add .gitattributes 2026/
 git -C data commit -S -m 'Collect 2026-11-12'
 
-bun run did verify 2026-11-12 --commit HEAD --signature
+bun run ddb verify 2026-11-12 --commit HEAD --signature
 git -C data log -- 2026/11/12.json
 git -C data show HEAD:2026/11/12.json
 ```
@@ -201,7 +210,7 @@ signature verification. External media bytes are not rehashed by this command.
 The working-tree manifest itself becomes authenticated when its Git commit is
 verified, not merely by running a hash inventory check.
 
-Collection serializes did writers using a lock inside `.git`; Git operations
+Collection serializes ddb writers using a lock inside `.git`; Git operations
 should run after collection completes. Files are individually atomically replaced
 and the day manifest is written last. The working-tree update is not a multi-file
 transaction; Git's commit is the atomic snapshot. If collection is interrupted
@@ -212,7 +221,7 @@ rejects inconsistent partial updates.
 ## Timestamp a signed commit
 
 ```sh
-bun run did timestamp stamp HEAD
+bun run ddb timestamp stamp HEAD
 ```
 
 The command resolves HEAD once, verifies the commit signature using Git's configured
@@ -221,9 +230,9 @@ signature. It then runs `ots stamp` on those bytes. The JSON result includes the
 resolved commit ID; **use that ID for later operations**, since HEAD will move:
 
 ```sh
-bun run did timestamp upgrade COMMIT_ID
-bun run did timestamp verify COMMIT_ID
-bun run did timestamp info COMMIT_ID
+bun run ddb timestamp upgrade COMMIT_ID
+bun run ddb timestamp verify COMMIT_ID
+bun run ddb timestamp info COMMIT_ID
 ```
 
 Proofs live in the **same data repository**, under:
@@ -274,7 +283,7 @@ Day manifests have this shape (abbreviated):
 
 ```json
 {
-  "schema": "did.day/v1",
+  "schema": "vandelay.day/v1",
   "scope": {
     "day": "2026-11-12",
     "timezone": "America/Chicago",
@@ -291,10 +300,10 @@ Day manifests have this shape (abbreviated):
 }
 ```
 
-Paths are repository-relative. Source manifests use `did.bundle/v1`:
+Paths are repository-relative. Source manifests use `vandelay.bundle/v1`:
 scope, source, producer, coverage, record count, and an inventory of `evidence.json`
 and `records.jsonl` (also `references.json` for Daycap) with ordinary SHA-256 hashes and byte sizes, plus
-`record_schema: "did.record/v1"`. The producer is `did/0.1.0`; adapter versions are
+`record_schema: "vandelay.record/v1"`. The producer is `@vandelay/ddb/0.1.0`; adapter versions are
 `source/2`. Evidence locators in records are
 relative to their source directory. Media remains external with SHA-256 identities,
 sizes and location hints; this repository does not back up media bytes.
@@ -322,19 +331,36 @@ matters: branch names and valid old snapshots do not establish which is latest.
 
 ## Static web publication
 
-The [`web/` workspace package](web.md) builds a calendar, multi-source daily
+The [`packages/web/` workspace package](web.md) builds a calendar, multi-source daily
 timelines, capture galleries, sample timelapses and Pagefind search from a pinned
 data-repository commit:
 
 ```sh
 bun install --frozen-lockfile
-bun run --cwd web build --commit ddc9dd39ced26
-bun run --cwd web preview --port 4324
+bun run --cwd packages/web build --commit HEAD
+bun run --cwd packages/web preview --port 4324
 ```
 
-The result is a self-contained static site in `web/dist/`. Media preparation uses
-the external did archive and FFmpeg; use `--media none` for a text-only build.
+The result is a self-contained static site in `packages/web/dist/`. Media preparation uses
+the external Vandelay archive and FFmpeg; use `--media none` for a text-only build.
 See [web publication](web.md) for selection, media URLs, subpath hosting and verification.
+
+## Scan and review before publication
+
+From the workspace root:
+
+```sh
+bun run ddb scan data/2026/11/14/dayflow/desktop \
+  --media-archive ~/.local/share/vandelay/media --report /path/to/scan.json
+bun run ddb review /path/to/scan.json
+bun run ddb apply-review /path/to/scan.json \
+  --review /path/to/scan.review.json --out /path/to/publication.json
+```
+
+These commands retain AutoRedact's exit statuses: 0 for complete/clear, 1 for
+findings or pending review, and 2 for incomplete scans or invocation errors.
+Review manifests are decisions, not edited media; the static web build does not
+yet consume them. See [AutoRedact](autoredact.md) for scope and native integration tests.
 
 ## Development
 

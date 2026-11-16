@@ -2,9 +2,9 @@
 
 - Updated: 2026-11-15. Source commit: `f6704667bf9b32d4de7ce4e52cf1a76320985a8b`.
 - Status: observation of the implemented importer and its limits.
-- Evidence: [`src/daycap.ts`](../src/daycap.ts),
-  [`src/repository.ts`](../src/repository.ts), and
-  [`test/daycap.test.ts`](../test/daycap.test.ts).
+- Evidence: [`src/daycap.ts`](../packages/ddb/src/daycap.ts),
+  [`src/repository.ts`](../packages/ddb/src/repository.ts), and
+  [`test/daycap.test.ts`](../packages/ddb/test/daycap.test.ts).
 - Limits: applies to `daycap.export/v2` and adapter `daycap/2`; revisit if the
   producer schema, identity rules, or reference resolution changes. Producer
   completeness and frame-to-wall-time accuracy are not independently established.
@@ -12,10 +12,10 @@
 Run commands from the source repository root.
 
 ```sh
-bun run did collect daycap \
+bun run ddb collect daycap \
   --day 2026-11-14 --timezone America/Chicago --instance desktop \
   --daycap-export /path/to/daycap-export \
-  --media-archive ~/.local/share/did/media
+  --media-archive ~/.local/share/vandelay/media
 ```
 
 The input is an existing `daycap.export/v2` directory. Its manifest checksum and
@@ -33,9 +33,9 @@ supply a persistent store UUID. Changing machine names should not rename history
 Each bundle inventories:
 
 - `evidence.json`: **exact original manifest bytes**, without reserialization.
-- `records.jsonl`: sorted `did.record/v1` records, using typed Daycap payloads in
+- `records.jsonl`: sorted `vandelay.record/v1` records, using typed Daycap payloads in
   `data`, evidence JSON Pointers, and source-qualified references.
-- `references.json`: a deterministic `did.references/v1` dependency index.
+- `references.json`: a deterministic `vandelay.references/v1` dependency index.
 
 The bundle coverage records export ID, original selection scope, source schema,
 manifest hash, diagnostics, and completeness limitations. The adapter is `daycap/2`.

@@ -1,0 +1,14 @@
+/output/
+/samples/
+__pycache__/
+.DS_Store
+.venv/
+*.pyc
+output/*.mp4
+output/yolo_dataset/
+output/yolo_runs/
+bin/vision_ocr
+bin/*.onnx
+node_modules/
+.cache/
+reports/

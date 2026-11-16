@@ -1,0 +1,24 @@
+{
+  "name": "@vandelay/ddb",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "ddb": "src/cli.ts" },
+  "exports": {
+    "./model": "./src/model.ts",
+    "./repository": "./src/repository.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
+    "@vandelay/autoredact": "workspace:*",
+    "commander": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0",
+    "typescript": "^5.9.3"
+  }
+}

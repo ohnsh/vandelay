@@ -1,4 +1,4 @@
-# Agent notes
+# Agent Notes
 
 ## Documentation
 
@@ -13,10 +13,10 @@ subdirectory should also be kept relevant and maintained, but in general, ask
 before removing or overwriting historical notes there. (No specific permission
 is needed to maintain the rest of `agent-notes/`.)
 
-Instead of creating or maintaining a top-level README.md, please keep usage
+Instead of creating or maintaining a top-level `README.md`, please keep usage
 instructions at `agent-notes/usage.md`.
 
-### Persistent agent context
+### Persistent Agent Context
 
 Save useful agent-generated context in `agent-notes/`, not `docs/`. These notes
 are agent-generated and are not necessarily reviewed or endorsed by the
@@ -50,5 +50,5 @@ behavior. Verify claims against current code. When revisiting a topic, update or
 supersede existing notes rather than creating overlapping accounts. Preserve
 historical measurements with their original conditions.
 
-Keep essential project instructions in AGENTS.md and durable implementation
+Keep essential project instructions in `AGENTS.md` and durable implementation
 constraints close to the relevant code or tests.
