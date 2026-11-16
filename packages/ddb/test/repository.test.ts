@@ -141,6 +141,22 @@ test('SHA-1 repositories also support signed timestamps', () => {
   repo.timestamp('stamp', id, args => writeFileSync(args[2] + '.ots', 'pending'));
 });
 
+test('CLI defaults to the runtime timezone, with explicit timezone taking precedence', () => {
+  const exported = join(root, 'aw.json');
+  writeFileSync(exported, encode({ buckets: { window: { hostname: 'mac', type: 'window', events: [] } } }));
+  const cli = [process.execPath, new URL('../src/cli.ts', import.meta.url).pathname, '--repo', repo.root,
+    'collect', 'activitywatch', '--instance', 'mac', '--aw-host', 'mac', '--aw-export', exported];
+  command([...cli, '--day', '2026-03-08'], { env: { ...process.env, TZ: 'America/New_York' } });
+  expect(repo.verify('2026-03-08').scope).toEqual(scope('2026-03-08', 'America/New_York'));
+  command([...cli, '--day', '2026-03-09', '--timezone', 'UTC'], { env: { ...process.env, TZ: 'invalid/zone' } });
+  expect(repo.verify('2026-03-09').scope).toEqual(scope('2026-03-09', 'UTC'));
+  const env = { ...process.env };
+  delete env.TZ;
+  const systemZone = command([process.execPath, '-e', 'console.log(Intl.DateTimeFormat().resolvedOptions().timeZone)'], { env }).toString().trim();
+  command([...cli, '--day', '2026-03-11'], { env });
+  expect(repo.verify('2026-03-11').scope).toEqual(scope('2026-03-11', systemZone));
+});
+
 test('CLI collects offline AW data, verifies signed historical snapshots, and reports source errors', () => {
   const exported = join(root, 'aw.json');
   writeFileSync(exported, encode({ buckets: { window: { hostname: 'mac', type: 'window', events: [

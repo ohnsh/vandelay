@@ -102,6 +102,11 @@ The date determines activity membership, not the commit date. Late arrivals and
 corrections update the same pathname in a later commit. Each repository supports
 one timezone per date; a conflicting scope is rejected.
 
+`--timezone` defaults to the JavaScript runtime's timezone via
+`Intl.DateTimeFormat().resolvedOptions().timeZone`. The runtime handles `$TZ`
+and system configuration (normally `/etc/localtime` on Unix). An explicit
+`--timezone` overrides this default.
+
 ### Source options and semantics
 
 - **ActivityWatch:** `--aw-host` selects all buckets for that hostname, separately

@@ -42,7 +42,7 @@ export function program(): Command {
     )
     .addArgument(new Argument('<source>').choices(['activitywatch', 'dayflow', 'daycap', 'vod']))
     .requiredOption('--day <YYYY-MM-DD>')
-    .requiredOption('--timezone <IANA_ZONE>')
+    .option('--timezone <IANA_ZONE>', 'day timezone (default: runtime timezone)')
     .requiredOption('--instance <name>', 'stable device/archive name')
     .option('--aw-host <host>')
     .option('--aw-url <url>', 'ActivityWatch root URL', 'http://localhost:5600')
@@ -71,7 +71,10 @@ export function program(): Command {
     .action(async (source: Source, o) => {
       const r = repo()
       r.assertRepository()
-      const bounds = scope(o.day, o.timezone)
+      const bounds = scope(
+        o.day,
+        o.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      )
       let collected
       if (source === 'activitywatch') {
         if (!o.awHost)
