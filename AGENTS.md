@@ -16,6 +16,10 @@ is needed to maintain the rest of `agent-notes/`.)
 Instead of creating or maintaining a top-level `README.md`, please keep usage
 instructions at `agent-notes/usage.md`.
 
+In a monorepo, the same policy applies to each contained package individually.
+Maintain separate package-level `agent-notes/` directories as appropriate, and
+avoid package-level `docs/` directories.
+
 ### Persistent Agent Context
 
 Save useful agent-generated context in `agent-notes/`, not `docs/`. These notes
