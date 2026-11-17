@@ -12,7 +12,7 @@ const bounds = scope('2026-11-14', 'UTC')
 const start = Date.parse(bounds.start)
 const movie = Buffer.from('synthetic media bytes; decoding is not required for archival')
 const hash = digest(movie), oldHash = digest('old segment'), policy = digest('policy')
-const video = { segmentHash: hash, frameIndex: 0, presentationMicroseconds: 123456 }
+const video = { segmentHash: hash, frameIndex: 0, presentationMicroseconds: 123456, durationMicroseconds: 2000000 }
 function capture(identity: string, at = start + 1000) {
   return {
     id: identity, sessionID: 'session', display: { id: 'display', width: 100, height: 100 },
@@ -25,7 +25,7 @@ function sample(identity: string, at = start + 1000) {
   return {
     id: identity, revision: 1, displayID: 'display', streamID: 'active', runID: 'run',
     requestedAt: at, completedAt: at + 100, width: 100, height: 100,
-    video: { ...video, segmentHash: oldHash }, submittedPNGHash: digest('submitted PNG'),
+    video: { ...video, segmentHash: oldHash, durationMicroseconds: 750000 }, submittedPNGHash: digest('submitted PNG'),
     submittedMasks: [],
   }
 }
@@ -47,7 +47,7 @@ function batch(identity = 'batch', at = start + 1000, sampleID = 'one') {
 }
 function fixture() {
   return {
-    schema: 'daycap.export/v2', id: 'export', producer: 'daycap/0.1.0',
+    schema: 'daycap.export/v3', id: 'export', producer: 'daycap/0.1.0',
     from: start, to: start + 86400000, timezone: 'UTC',
     observations: [capture('one')], journal: [batch()],
     analyses: [] as unknown[], withdrawals: [] as unknown[],
@@ -69,7 +69,7 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-test('v2 collection preserves exact evidence and separates current media from submission inputs', () => {
+test('v3 collection preserves exact evidence and separates current media from submission inputs', () => {
   const bytes = write(fixture()), result = collect()
   expect(result.evidenceBytes!.equals(bytes)).toBe(true)
   expect(result.records).toHaveLength(4)
@@ -80,12 +80,16 @@ test('v2 collection preserves exact evidence and separates current media from su
   })
   expect(capture.media![0].sha256).toBe(hash)
   expect(capture.media![0].selector!.presentation).toEqual({ value: '123456', timescale: 1000000 })
+  expect(capture.media![0].selector!.duration).toEqual({ value: '2000000', timescale: 1000000 })
   expect(readFileSync(join(archive, `sha256/${hash.slice(0, 2)}/${hash}`))).toEqual(movie)
   const analysis = result.records.find(r => r.kind === 'daycap.journal.analysis')!
   expect(analysis.data).toMatchObject({
     inputs: [{
       capture: { revision: '1' },
-      archived_at_submission: { availability: 'referenced', sha256: oldHash },
+      archived_at_submission: {
+        availability: 'referenced', sha256: oldHash,
+        selector: { duration: { value: '750000', timescale: 1000000 } },
+      },
       submitted_image: { availability: 'not-retained', sha256: digest('submitted PNG') },
     }],
   })
@@ -99,6 +103,25 @@ test('v2 collection preserves exact evidence and separates current media from su
     ]),
   })
   expect(encode(collect().records)).toEqual(encode(result.records))
+})
+
+test('rejects old exports and missing or invalid current and historical sample durations', () => {
+  const old = fixture(); old.schema = 'daycap.export/v2'
+  const bytes = write(old)
+  expect(collect).toThrow('Unsupported Daycap export schema')
+  expect(() => daycapReferences(bytes, [], 'desktop')).toThrow('Unsupported Daycap export schema')
+  for (const duration of [undefined, null, 0, -1, 0.5, Number.MAX_SAFE_INTEGER + 1, '2000000']) {
+    for (const historical of [false, true]) {
+      const f = fixture()
+      const reference = historical ? f.journal[0].samples[0].video : f.observations[0].video
+      // Replace rather than mutate the shared fixture reference.
+      const invalid = { ...reference, durationMicroseconds: duration }
+      if (historical) f.journal[0].samples[0].video = invalid as typeof reference
+      else f.observations[0].video = invalid as typeof reference
+      write(f)
+      expect(collect).toThrow()
+    }
+  }
 })
 
 test('decimal milliseconds retain numeric lexemes and round microsecond ties to even', () => {
@@ -255,6 +278,7 @@ test('repository and CLI inventory exact bytes and rebuild references during ver
   expect(repo.collect('daycap', 'desktop', bounds, collect()).changed).toBe(false)
   repo.verify(bounds.day)
   const prefix = '2026/11/14/daycap/desktop', path = join(repo.root, prefix)
+  expect(JSON.parse(readFileSync(join(path, 'manifest.json'), 'utf8')).producer.adapter).toBe('daycap/3')
   expect(readFileSync(join(path, 'evidence.json'))).toEqual(bytes)
   const cli = command([
     process.execPath, new URL('../src/cli.ts', import.meta.url).pathname, '--repo', repo.root, 'collect', 'daycap',

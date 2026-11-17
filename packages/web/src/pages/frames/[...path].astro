@@ -38,6 +38,9 @@ const route = (n: number) => withBase(`/frames/${date}/${source}/${n}/`)
           <dt>Source SHA-256</dt><dd><code>{frame.media?.sha256 ?? 'Unavailable'}</code></dd>
           <dt>Frame index</dt><dd>{frame.frameIndex ?? 'Still image'}</dd>
           <dt>Source presentation time</dt><dd>{frame.presentation ? `${frame.presentation.value} / ${frame.presentation.timescale} seconds` : 'Not supplied'}</dd>
+          {frame.media?.selector?.duration && <>
+            <dt>Source sample duration</dt><dd>{frame.media.selector.duration.value} / {frame.media.selector.duration.timescale} seconds (media range, not continuous screen coverage)</dd>
+          </>}
         </dl>
       </details>
     </article>)}

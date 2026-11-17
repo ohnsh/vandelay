@@ -14,7 +14,7 @@ with Git, and timestamp signed commits with OpenTimeStamps.
 The ActivityWatch, Dayflow and VOD collectors and normalization utilities are
 migrated from the predecessor Vandelay implementation. Git replaces the immutable archive store, day revision
 chain, composition command and custom signature envelopes.
-The Daycap collector imports verified `daycap.export/v2` export directories.
+The Daycap collector imports verified `daycap.export/v3` export directories.
 
 ## Setup
 
@@ -131,7 +131,7 @@ and system configuration (normally `/etc/localtime` on Unix). An explicit
    observation-to-frame attribution. Original junction rows remain in evidence,
    including associations for out-of-day whole-segment frames.
    AI interpretations remain attributed to Dayflow.
-- **Daycap:** `--daycap-export` selects a completed v2 export directory containing
+- **Daycap:** `--daycap-export` selects a completed v3 export directory containing
   `manifest.json`, `manifest.sha256`, and inventoried media. An explicit stable
   `--instance` identifies the source store. Original manifest bytes become
   `evidence.json`; captures, Journal notes/cards/analyses/gaps, Evidence analyses/

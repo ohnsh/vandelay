@@ -9,7 +9,7 @@ import { rejects } from 'node:assert/strict'
 
 const root = mkdtempSync(join(tmpdir(), 'vandelay-web-media-'))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
-test('exact frames, playback map, cache integrity, missing media and mismatched selectors', async () => {
+test.each(['dayflow', 'daycap'] as const)('%s exact frames, playback map, cache integrity, missing media and mismatched selectors', async (type) => {
   await run([
     'ffmpeg',
     '-v',
@@ -19,7 +19,13 @@ test('exact frames, playback map, cache integrity, missing media and mismatched 
     '-i',
     'testsrc2=size=128x72:rate=1:duration=3',
     '-c:v',
-    'libx264',
+    type === 'daycap' ? 'libx265' : 'libx264',
+    ...(type === 'daycap' ? [
+      '-x265-params', 'bframes=0:keyint=1:pools=1:frame-threads=1:log-level=error',
+      '-tag:v', 'hvc1',
+      '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+      '-video_track_timescale', '1000000',
+    ] : []),
     '-threads',
     '1',
     '-pix_fmt',
@@ -34,7 +40,7 @@ test('exact frames, playback map, cache integrity, missing media and mismatched 
       record(
         {
           id: `screenshots:${i}`,
-          kind: 'dayflow.screenshots',
+          kind: type === 'daycap' ? 'daycap.capture' : 'dayflow.screenshots',
           time: { model: 'instant', at: `2026-11-14T00:00:0${i}Z`, basis: 'capture' },
           data: { frame_index: i },
           media: [
@@ -43,6 +49,11 @@ test('exact frames, playback map, cache integrity, missing media and mismatched 
               sha256: digest(source),
               bytes: source.length,
               location: { kind: 'archive-relative', path: 'source.mp4' },
+              ...(type === 'daycap' ? { selector: {
+                type: 'video-frame' as const, frame_index: i,
+                presentation: { value: String(i * 1000000), timescale: 1000000 },
+                duration: { value: '1000000', timescale: 1000000 },
+              } } : {}),
             },
           ],
         },
@@ -53,14 +64,20 @@ test('exact frames, playback map, cache integrity, missing media and mismatched 
       record(
         {
           id: 'card',
-          kind: 'dayflow.timeline_cards',
+          kind: type === 'daycap' ? 'daycap.journal.activity' : 'dayflow.timeline_cards',
           time: {
             model: 'interval',
             start: '2026-11-14T00:00:00Z',
             end: '2026-11-14T00:00:03Z',
             basis: 'source-asserted-interval',
           },
-          data: { summary: 'Test clip' },
+          data: {
+            summary: 'Test clip',
+            ...(type === 'daycap' ? { relations: [0, 2].map(i => ({
+              relation: 'supports',
+              target: { source: { type, instance: 'fixture' }, id: `screenshots:${i}` },
+            })) } : {}),
+          },
         },
         bounds,
       )!,
@@ -76,9 +93,9 @@ test('exact frames, playback map, cache integrity, missing media and mismatched 
             schema: 'vandelay.bundle/v1',
             record_schema: 'vandelay.record/v1',
             scope: bounds,
-            producer: { name: 'fixture', version: '1', adapter: 'dayflow/2' },
+             producer: { name: 'fixture', version: '1', adapter: `${type}/${type === 'daycap' ? 3 : 2}` },
             files: {},
-            source: { type: 'dayflow', instance: 'fixture' },
+             source: { type, instance: 'fixture' },
             coverage: { state: 'observed', method: 'fixture', limitations: [] },
             record_count: records.length,
           },
@@ -90,6 +107,10 @@ test('exact frames, playback map, cache integrity, missing media and mismatched 
   const cache = join(root, 'cache'),
     day = make()
   const assets = await prepareMedia([day], root, cache, true)
+  if (type === 'daycap') {
+    expect(source.includes(Buffer.from('moof'))).toBe(true)
+    expect(day.frames[0].media!.selector!.duration).toEqual({ value: '1000000', timescale: 1000000 })
+  }
   expect(assets.filter((a) => a.path.endsWith('.webp'))).toHaveLength(2)
   expect(assets.filter((a) => a.path.endsWith('.mp4'))).toHaveLength(1)
   expect(day.entries[0].clip?.frames.map((f) => [f.offset, f.at, f.gap])).toEqual([

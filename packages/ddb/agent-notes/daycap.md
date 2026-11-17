@@ -1,11 +1,12 @@
 # Daycap collector
 
-- Updated: 2026-11-15. Source commit: `f6704667bf9b32d4de7ce4e52cf1a76320985a8b`.
+- Updated: 2026-11-17. Source baseline: `cf490df559e55da28997c6ea659f5ef0feff2f30`
+  plus the accompanying v3 importer changes.
 - Status: observation of the implemented importer and its limits.
 - Evidence: [`src/daycap.ts`](../src/daycap.ts),
   [`src/repository.ts`](../src/repository.ts), and
   [`test/daycap.test.ts`](../test/daycap.test.ts).
-- Limits: applies to `daycap.export/v2` and adapter `daycap/2`; revisit if the
+- Limits: applies to `daycap.export/v3` and adapter `daycap/3`; revisit if the
   producer schema, identity rules, or reference resolution changes. Producer
   completeness and frame-to-wall-time accuracy are not independently established.
 
@@ -18,11 +19,11 @@ bun run ddb collect daycap \
   --media-archive ~/.local/share/vandelay/media
 ```
 
-The input is an existing `daycap.export/v2` directory. Its manifest checksum and
+The input is an existing `daycap.export/v3` directory. Its manifest checksum and
 every inventoried object's hash/size must verify. Paths must stay within the export,
 including through symlinks. Missing or corrupt inventoried objects fail collection.
 Media bytes are copied using the same external content-addressed archive as Dayflow.
-The importer validates frame-index/PTS integer structure; it does not decode movies
+The importer validates frame-index/PTS and positive sample-duration integer structure; it does not decode movies
 or independently verify the producer's frame-to-wall-time mapping.
 
 Use a stable `--instance` for each independent Daycap store. The export does not
@@ -38,7 +39,7 @@ Each bundle inventories:
 - `references.json`: a deterministic `vandelay.references/v1` dependency index.
 
 The bundle coverage records export ID, original selection scope, source schema,
-manifest hash, diagnostics, and completeness limitations. The adapter is `daycap/2`.
+manifest hash, diagnostics, and completeness limitations. The adapter is `daycap/3`.
 
 | Source entity | Normalized ID | Time |
 |---|---|---|
@@ -80,7 +81,19 @@ Other malformed structures fail collection.
 
 Capture media always resolves from exported observations. Each current video
 reference includes its segment hash and frame selector with actual presentation
-microseconds at timescale 1,000,000. Presentation time is independent of wall time.
+microseconds at timescale 1,000,000. `selector.duration` retains the explicit
+`durationMicroseconds` as a rational value at the same timescale, including for
+historical Journal inputs. Presentation time is independent of wall time. Sample
+durations describe source media ranges, not continuous screen coverage; they do
+not extend capture bounds or determine publication clip cadence.
+
+The producer's incremental storage contract is documented in
+`../daycap/agent-notes/video-storage.md` (relative to the workspace root).
+Sealed objects may be fragmented MP4s; archival preserves their exact bytes and
+preview extraction still selects decoded presentation-order frames with PTS
+verification. Fragmentation does not imply HLS readiness. Native staging and
+crash recovery belong to Daycap; collection consumes completed exports.
+Only v3 exports are supported; re-export older data rather than inferring durations.
 
 Journal analysis inputs separately retain:
 

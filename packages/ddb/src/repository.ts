@@ -111,7 +111,7 @@ export class Repository {
         record_schema: 'vandelay.record/v1',
         scope: bounds,
         source: { type: source, instance },
-        producer: { name: '@vandelay/ddb', version: '0.1.0', adapter: `${source}/2` },
+        producer: { name: '@vandelay/ddb', version: '0.1.0', adapter: `${source}/${source === 'daycap' ? 3 : 2}` },
         coverage: collected.coverage,
         record_count: collected.records.length,
         files: Object.fromEntries(

@@ -28,6 +28,8 @@ export interface Media {
     type: 'video-frame'
     frame_index: number
     presentation: { value: string; timescale: number }
+    /** Source sample range, not continuous screen coverage or wall-clock duration. */
+    duration?: { value: string; timescale: number }
   }
 }
 export interface DayAssociation {

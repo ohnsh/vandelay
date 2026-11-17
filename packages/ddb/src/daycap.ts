@@ -182,9 +182,12 @@ function envelope(items: ObjectValue[]): RecordTime {
 function selector(video: unknown): NonNullable<Media['selector']> {
   const v = object(video)
   identifier(text(v.segmentHash))
+  const duration = integer(v.durationMicroseconds)
+  if (duration === 0) throw new Error('Daycap: expected positive sample duration')
   return {
     type: 'video-frame', frame_index: integer(v.frameIndex),
     presentation: { value: String(integer(v.presentationMicroseconds)), timescale: 1_000_000 },
+    duration: { value: String(duration), timescale: 1_000_000 },
   }
 }
 function captureID(o: ObjectValue): string {
@@ -207,7 +210,7 @@ export function daycap(
   if (!/^[a-f0-9]{64}  manifest\.json\n?$/.test(checksum) || checksum.slice(0, 64) !== digest(bytes))
     throw new Error('Daycap: manifest checksum mismatch')
   const source = parse(bytes)
-  if (source.schema !== 'daycap.export/v2') throw new Error('Unsupported Daycap export schema')
+  if (source.schema !== 'daycap.export/v3') throw new Error('Unsupported Daycap export schema')
   id(source.id); text(source.timezone)
   Temporal.Now.instant().toZonedDateTimeISO(text(source.timezone))
   const from = milliseconds(source.from), to = milliseconds(source.to)
@@ -289,7 +292,7 @@ export function daycap(
 
   for (const [bi, b] of journal.entries()) {
     const pointer = `/journal/${bi}`, identity = batchID(b)
-    if (b.status !== 'complete') throw new Error('Daycap v2: expected completed Journal batch')
+    if (b.status !== 'complete') throw new Error('Daycap v3: expected completed Journal batch')
     const samples = list(b.samples).map(object), bySample = unique(samples, s => id(s.id))
     const assigned = list(b.sourceIDs).map(id)
     unique(assigned, s => s)
@@ -463,7 +466,7 @@ export function daycap(
   }
   for (const [ai, a] of analyses.entries()) {
     const identity = `analysis/${id(a.id)}`, pointer = `/analyses/${ai}`
-    if (a.status !== 'complete') throw new Error('Daycap v2: expected completed Evidence analysis')
+    if (a.status !== 'complete') throw new Error('Daycap v3: expected completed Evidence analysis')
     const ids = list(a.observationIDs).map(id)
     const inputs = ids.map(i => {
       const c = byCapture.get(i)
@@ -519,12 +522,13 @@ export function daycap(
   return {
     records, evidence: JSON.parse(bytes.toString()), evidenceBytes: bytes,
     coverage: {
-      state: 'observed', method: 'verified-daycap-v2-export', export_id: text(source.id),
+      state: 'observed', method: 'verified-daycap-v3-export', export_id: text(source.id),
       source_schema: source.schema, manifest_sha256: digest(bytes),
       source_scope: { start: from, end: to, timezone: text(source.timezone) },
       diagnostics,
       limitations: [
         'Captures selected by request time; export is not arbitrary overlap closure.',
+        'Video sample durations describe source media ranges, not continuous screen coverage.',
         'Journal batches require an in-range start and all assigned captures selected; only completed analyses are exported.',
         'Retries retain only the current known attempt; context may refer to unexported generations.',
         'Export re-encoding may change capture revisions/media; historical submission bytes are not retained.',
@@ -538,7 +542,7 @@ export function daycap(
 /** A pure index: no filesystem, live-store queries, or neighboring-bundle lookup. */
 export function daycapReferences(evidenceBytes: Buffer, records: ArchiveRecord[], instance: string): unknown {
   const source = parse(evidenceBytes)
-  if (source.schema !== 'daycap.export/v2') throw new Error('Unsupported Daycap export schema')
+  if (source.schema !== 'daycap.export/v3') throw new Error('Unsupported Daycap export schema')
   const namespace = { type: 'daycap' as const, instance }
   const checkLocators = (value: unknown): void => {
     if (!value || typeof value !== 'object') return

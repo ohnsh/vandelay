@@ -47,7 +47,7 @@ export function program(): Command {
     .option('--aw-host <host>')
     .option('--aw-url <url>', 'ActivityWatch root URL', 'http://localhost:5600')
     .option('--aw-export <file>', 'AW JSON export instead of live HTTP')
-    .option('--daycap-export <directory>', 'Daycap v2 export directory')
+    .option('--daycap-export <directory>', 'Daycap v3 export directory')
     .option(
       '--dayflow-db <path>',
       'Dayflow SQLite database',
