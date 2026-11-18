@@ -130,3 +130,12 @@ combined.
 
 Checks: `bun run check`, `bun run test`. Media tests require FFmpeg with libx264,
 libx265, and WebP support. No credentials or network services are required by tests.
+## Reviewed masking
+
+Pass `--redaction-report /path/report.json --redaction-review /path/report.review.json`
+to `build` to enforce an AutoRedact review and render its approved masks in posters
+and video chunks. Scan the selected bundle directories and media first. Exact pinned
+text/media inputs must be covered; pending/incomplete reviews and withheld text block
+the build. Withheld frames have no playback. External `--media-urls` cannot accompany
+a reviewed build. See [AutoRedact usage](../../autoredact/agent-notes/usage.md) for
+mask editing and scoped OCR following.

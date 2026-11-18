@@ -8,6 +8,7 @@ import type { Publication } from './model'
 import { prepareMedia } from './media'
 import { writePublication } from './store'
 import { discoveryPath } from './discovery'
+import { loadRendition } from '@vandelay/autoredact'
 
 export async function prepare(args: string[]) {
   const { values } = parseArgs({
@@ -25,6 +26,8 @@ export async function prepare(args: string[]) {
       cache: { type: 'string', default: '.cache/media' },
       signature: { type: 'boolean', default: false },
       'media-urls': { type: 'string' },
+      'redaction-report': { type: 'string' },
+      'redaction-review': { type: 'string' },
     },
   })
   discoveryPath(values.channel)
@@ -34,6 +37,12 @@ export async function prepare(args: string[]) {
   const matchedSources = new Set<string>()
   if (!['none', 'all'].includes(values.media!))
     throw new Error('--media must be all or none')
+  if (!!values['redaction-report'] !== !!values['redaction-review'])
+    throw new Error('Both --redaction-report and --redaction-review are required')
+  const rendition = values['redaction-report']
+    ? await loadRendition(resolve(values['redaction-report']), resolve(values['redaction-review']!)) : undefined
+  if (rendition && values['media-urls']) throw new Error('Reviewed publications cannot link original external recordings')
+  await rendition?.verifySources()
   const stride = Number(values.stride)
   if (![1, 2, 3, 4].includes(stride)) throw new Error('--stride must be 1, 2, 3 or 4')
   const repo = new Repository(resolve(values.repo!))
@@ -62,6 +71,12 @@ export async function prepare(args: string[]) {
       matchedSources.add(manifest.source.type)
       const prefix = ref.path.slice(0, -'manifest.json'.length)
       const records = blob(`${prefix}records.jsonl`).toString().trim()
+      if (rendition) {
+        rendition.requireText(digest(blob(ref.path)))
+        rendition.requireText(digest(blob(`${prefix}records.jsonl`)))
+        rendition.requireText(digest(blob(`${prefix}evidence.json`)))
+        if (manifest.source.type === 'daycap') rendition.requireText(digest(blob(`${prefix}references.json`)))
+      }
       return [{
         manifest,
         path: ref.path,
@@ -104,6 +119,7 @@ export async function prepare(args: string[]) {
     resolve(values.cache!),
     values.media === 'all',
     stride,
+    rendition,
   )
   const publication: Publication = {
     schema: 'vandelay.publish/v1',
@@ -114,7 +130,9 @@ export async function prepare(args: string[]) {
         .map(path => ({ path, sha256: digest(readFileSync(new URL(path, import.meta.url))) })),
       lock: digest(readFileSync(new URL('../../../bun.lock', import.meta.url))),
     })),
-    configuration: { media: values.media as 'all' | 'none', captureStride: stride, ...(sources ? { sources } : {}) },
+    configuration: { media: values.media as 'all' | 'none', captureStride: stride,
+      ...(sources ? { sources } : {}),
+      ...(rendition ? { redaction: { reportSha256: rendition.reportSha256, reviewSha256: rendition.reviewSha256, recipe: rendition.digest } } : {}) },
     inputDigest: digest(
       encode({
         commit,
@@ -123,6 +141,7 @@ export async function prepare(args: string[]) {
         stride,
         ...(sources ? { sources } : {}),
         urls,
+        ...(rendition ? { redaction: rendition.digest } : {}),
       }),
     ),
     verification: {
@@ -132,6 +151,7 @@ export async function prepare(args: string[]) {
     },
     days,
   }
+  await rendition?.verifySources()
   const current = writePublication(resolve(values.out!), publication, assets, resolve(values.cache!), values.channel)
   console.log(
     `Prepared ${days.length} days, ${days.reduce((n, d) => n + d.entries.length, 0)} entries, ${assets.length} media assets`,

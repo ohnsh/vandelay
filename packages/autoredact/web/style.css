@@ -4,3 +4,16 @@
 @media(max-width:1100px){.header{padding:0 20px}.save-status{display:none}.overview{padding:26px 20px}.workspace{margin:0 20px;grid-template-columns:245px minmax(0,1fr)}.queue-item{padding:15px 10px;gap:8px}.queue-icon{display:none}.review-area{padding:18px}.progress-block{width:220px}h1{font-size:23px}.decision-actions{grid-template-columns:1fr}.verified-label{display:none}.view-controls{gap:6px}.footer{padding:18px 20px}.banner{margin-left:20px;margin-right:20px}}
 @media(max-width:760px){.header{height:auto;padding:16px;flex-wrap:wrap}.header-actions{width:100%;justify-content:flex-end}.overview{padding:24px 16px;align-items:flex-start;flex-direction:column;gap:22px}.progress-block{width:100%}.workspace{margin:0 12px;grid-template-columns:1fr}.queue{border-right:0;border-bottom:1px solid var(--line)}.queue-explanation{display:none}.queue-heading{padding:16px}.search{margin-bottom:10px}.queue-list{max-height:200px}.queue-footer{display:none}.queue-item{padding:13px 16px}.queue-source,.queue-rule{display:none}.queue-meta{margin-top:5px}.queue-icon{display:grid}.review-area{padding:16px}.item-header{gap:10px}.item-header h2{font-size:18px}.item-header p{line-height:1.7}.inspector-toolbar{flex-wrap:wrap;gap:14px}.view-controls{width:100%;justify-content:flex-end}.footer{flex-direction:column;gap:14px}.report-name{line-height:1.8;overflow-wrap:anywhere}.banner{margin:0 12px 16px;flex-wrap:wrap}.decision-bottom{align-items:flex-start}.completion{min-height:420px;padding:20px}.completion h2{font-size:22px}.provenance summary span{display:none}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.mask-editor { padding: 16px; }
+.mask-editor p { color: var(--muted, #9299a5); font-size: 13px; }
+.mask-canvas { position: relative; width: 100%; touch-action: none; }
+.mask-canvas img { display: block; width: 100%; }
+.ocr-anchor, .applied-mask { position: absolute; padding: 0; border-radius: 0; }
+.ocr-anchor { background: transparent; border: 1px solid #44c6dc; cursor: crosshair; }
+.applied-mask { background: #000; border: 0; cursor: move; touch-action: none; }
+.applied-mask.selected { outline: 2px solid #44c6dc; z-index: 2; }
+.applied-mask.propagated { outline: 1px dashed #ddb65f; pointer-events: none; }
+.mask-handle { position: absolute; width: 10px; height: 10px; right: 0; bottom: 0; background: #44c6dc; cursor: nwse-resize; }
+.mask-properties { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 0; }
+.mask-properties label { display: flex; gap: 6px; align-items: center; }
+.mask-properties input[type=number] { width: 90px; }

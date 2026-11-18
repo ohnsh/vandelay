@@ -4,8 +4,13 @@ import { resolve } from "node:path";
 import { hash } from "../rules.ts";
 import { groupFindings, parseReport, publication, validateReview } from "./model.ts";
 import { startReview } from "./server.ts";
+import { loadRendition, renderRendition } from "../rendition.ts";
 
 export const reviewHelp = `
+autoredact render-review REPORT.json --review REVIEW.json --out NEW_DIRECTORY
+  Render approved masked frames as lossless PNG derivatives with an exact source mapping.
+  Requires complete review. Original media and historical references are unchanged.
+
 autoredact review REPORT.json [--state REVIEW.json] [--port 4317]
   Open a local React review app. Default state: REPORT.review.json.
   Report stays immutable; decisions are saved separately after each action.
@@ -35,11 +40,15 @@ export async function reviewCLI(args: string[]): Promise<number> {
     console.log(`AutoRedact review: ${url}\nDecisions: ${resolve(state)}\nCtrl+C to stop.`);
     return 0;
   }
-  if (command !== "apply-review" || !values.review || !values.out || values.state || values.port)
+  if (!["apply-review", "render-review"].includes(command) || !values.review || !values.out || values.state || values.port)
     throw new Error("invalid-apply-review-options");
+  if (command === "render-review") {
+    await renderRendition(await loadRendition(report, values.review), values.out);
+    return 0;
+  }
   const reportBytes = await readFile(report), reviewBytes = await readFile(values.review);
   const parsed = parseReport(reportBytes), reportHash = hash(reportBytes);
-  const state = validateReview(JSON.parse(reviewBytes.toString()), reportHash, groupFindings(parsed));
+  const state = validateReview(JSON.parse(reviewBytes.toString()), reportHash, groupFindings(parsed), parsed);
   const manifest = publication(parsed, reportHash, state, hash(reviewBytes));
   await writeFile(values.out, JSON.stringify(manifest, null, 2) + "\n", { flag: "wx", mode: 0o600 });
   return manifest.status === "complete" ? 0 : manifest.status === "pending-review" ? 1 : 2;

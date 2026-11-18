@@ -52,6 +52,8 @@ Manifest fields:
   projection and media generation; the normalized selection contributes to
   `inputDigest`. Each requested type must exist in the selected dates. Dates with
   no matching sources remain as empty days.
+- Reviewed builds also contain optional `configuration.redaction: { reportSha256, reviewSha256,
+  recipe }`, each a SHA-256 digest. Older v1 manifests omit this additive field.
 - `inputDigest`: digest of pinned input selection and configuration.
 - `verification`: archive, signature, and timestamp verification states.
 - `days`: sorted `{ scope, object: ObjectRef, preview?: ObjectRef }` entries. Scope contains `day`,
@@ -61,6 +63,23 @@ Metadata-only changes reuse identical day/media objects. Different publication
 versions can retain different renditions of a frame; deduplication is by exact
 object content, not a promise that all historical encodings are identical.
 Objects reachable from retained manifests must not be garbage-collected.
+
+### Reviewed redaction derivatives
+
+Added 2026-11-18 against `5374ec4f6c99ce93ee3004f1cdca393c066ebe2a`.
+`--redaction-report` and `--redaction-review` opt into the AutoRedact offline adapter.
+It binds exact pinned bundle text and source media to a complete scan/review.
+Source filtering precedes these bundle checks. Reviewed builds can target a named
+channel; the channel name remains outside immutable identity, while source selection
+and redaction provenance both contribute to that identity.
+Withheld text blocks generation; withheld frames receive no playback. Approved masks
+are applied before resizing/encoding to both shared video chunks and posters.
+Original source frame identities and citations remain historical provenance, with
+output mappings in `Asset.inputs`; a masked derivative is not a revised analysis input.
+Recipes and cache identities include the report/review and rendering engine digest.
+Public artifacts contain only the digest provenance, not local mask plans or OCR data.
+Reviewed builds reject external original-recording URLs. Old immutable publications
+are neither replaced nor removed.
 
 ## Lightweight consumers
 

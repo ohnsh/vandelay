@@ -91,7 +91,7 @@ export async function startReview(reportPath: string, statePath: string, port = 
   const json = (value: unknown, status = 200) => Response.json(value, { status, headers });
   const server = Bun.serve({
     hostname: "127.0.0.1", port,
-    maxRequestBodySize: 16_384,
+    maxRequestBodySize: 262_144,
     async fetch(request, server) {
       const url = new URL(request.url);
       const host = `127.0.0.1:${server.port}`;
@@ -115,6 +115,10 @@ export async function startReview(reportPath: string, statePath: string, port = 
           const state = await store.update(data.revision, data.groupId, data.decision, data.note ?? "");
           return json(state);
         }
+        if (request.method === "POST" && route === "/api/masks") {
+          const data = await request.json();
+          return json(await store.masks(data.revision, data.groupId, data.masks));
+        }
         if (request.method === "GET" && route === "/api/review")
           return new Response(store.exportBytes(), { headers: { ...headers, "Content-Type": "application/json",
             "Content-Disposition": 'attachment; filename="review.json"' } });
@@ -136,7 +140,8 @@ export async function startReview(reportPath: string, statePath: string, port = 
         const code = error instanceof Error ? error.message : "request-failed";
         // Native/filesystem diagnostics can contain private data; return known codes only.
         const allowed = ["revision-conflict", "invalid-decision", "review-locked", "review-changed-on-disk",
-          "report-changed-on-disk", "source-missing-or-changed", "frame-decode-failed", "text-location-missing"];
+          "report-changed-on-disk", "source-missing-or-changed", "frame-decode-failed", "text-location-missing",
+          "invalid-mask", "invalid-mask-anchor", "invalid-mask-scope", "invalid-mask-frame"];
         return json({ error: allowed.includes(code) ? code : "request-failed" },
           /conflict|changed-on-disk|locked/.test(code) ? 409 : 400);
       }

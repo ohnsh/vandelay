@@ -7,6 +7,65 @@ import { tmpdir } from "node:os";
 import { fixtureReport } from "./review-fixture.ts";
 import { startReview } from "../src/review/server.ts";
 import { hash } from "../src/rules.ts";
+import { fingerprint, frameID } from "../src/masks.ts";
+
+test.skipIf(process.env.AUTOREDACT_REVIEW_TEST !== "1")("mask editor: anchor, resize, follow, review, reload and delete propagation", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "autoredact-mask-browser-"));
+  const source = join(dir, "source.mp4");
+  const encoder = Bun.spawn(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=white:s=640x400:r=1:d=3",
+    "-c:v", "libx264", "-pix_fmt", "yuv420p", source], { stdout: "ignore", stderr: "ignore" });
+  expect(await encoder.exited).toBe(0);
+  const report = fixtureReport(source, await readFile(source));
+  report.frames = [0, 1, 2].map(frame => ({ source, frame, seconds: frame, regions: [{
+    id: hash(`ocr${frame}`), textHash: fingerprint(frame === 2 ? "other" : "same"),
+    box: [0.1 + frame * 0.1, 0.2, 0.2, 0.2],
+  }] }));
+  const reportPath = join(dir, "report.json"), statePath = join(dir, "review.json");
+  await writeFile(reportPath, JSON.stringify(report));
+  const { server, url } = await startReview(reportPath, statePath, 0);
+  const edge = "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge";
+  const browser = await chromium.launch({ headless: true, ...(existsSync(edge) ? { executablePath: edge } : {}) });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
+    const errors: string[] = [];
+    page.on("pageerror", e => errors.push(e.message));
+    await page.goto(url);
+    await page.getByAltText("Frame 0 for mask review").evaluate((img: HTMLImageElement) => img.decode());
+    await page.getByRole("button", { name: "Anchor OCR region 1", exact: true }).click();
+    await page.getByLabel("Mask width", { exact: true }).fill("0.3");
+    expect(await page.getByRole("button", { name: "False positive · publish", exact: false }).isDisabled()).toBe(true);
+    await page.getByLabel("Follow matching OCR in this source").check();
+    await page.getByRole("button", { name: "Save masks", exact: true }).click();
+    await page.getByRole("button", { name: "Approve masked frame", exact: false }).waitFor();
+    const read = async () => JSON.parse(await readFile(statePath, "utf8"));
+    const initial = await read();
+    expect(Object.keys(initial.maskPlan.frames)).toHaveLength(2);
+    expect(initial.maskPlan.frames[frameID(source, 1)][0].box[0]).toBeCloseTo(0.2);
+    expect(initial.maskPlan.frames[frameID(source, 1)][0].box[2]).toBeCloseTo(0.3);
+    await page.getByRole("button", { name: "Approve masked frame", exact: false }).click();
+    await page.getByAltText("Frame 1 for mask review").waitFor();
+    await page.getByRole("button", { name: "Approve masked frame", exact: false }).click();
+    await page.getByRole("heading", { name: "Every flagged item has a decision." }).waitFor();
+    await page.reload();
+    await page.getByRole("button", { name: "All", exact: true }).click();
+    await page.getByAltText("Frame 0 for mask review").evaluate((img: HTMLImageElement) => img.decode());
+    await page.getByRole("button", { name: "Mask 1", exact: true }).click();
+    // Pointer move preserves anchor; numeric controls also support precise resizing.
+    const bounds = await page.locator(".applied-mask.selected").boundingBox();
+    await page.mouse.move(bounds!.x + 8, bounds!.y + 8);
+    await page.mouse.down(); await page.mouse.move(bounds!.x + 28, bounds!.y + 18); await page.mouse.up();
+    await page.getByRole("button", { name: "Save masks", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('[role=status]')?.textContent?.includes("revision 4"));
+    const moved = await read();
+    expect(moved.maskPlan.frames[frameID(source, 0)][0].anchor.box).toEqual([0.1, 0.2, 0.2, 0.2]);
+    expect(moved.decisions[frameID(source, 1)]).toBeUndefined();
+    await page.getByRole("button", { name: "Delete mask", exact: true }).click();
+    await page.getByRole("button", { name: "Save masks", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('[role=status]')?.textContent?.includes("revision 5"));
+    expect((await read()).maskPlan.frames).toEqual({});
+    expect(errors).toEqual([]);
+  } finally { await browser.close(); server.stop(true); await rm(dir, { recursive: true, force: true }); }
+}, 90_000);
 
 test.skipIf(process.env.AUTOREDACT_REVIEW_TEST !== "1")("React review: exact frame, save, undo, reload, export, mobile, and local API boundaries", async () => {
   const dir = await mkdtemp(join(tmpdir(), "autoredact-browser-"));

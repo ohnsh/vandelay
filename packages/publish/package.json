@@ -16,6 +16,7 @@
     "test": "bun test test"
   },
   "dependencies": {
+    "@vandelay/autoredact": "workspace:*",
     "aws4fetch": "^1.0.20",
     "@vandelay/ddb": "workspace:*"
   },

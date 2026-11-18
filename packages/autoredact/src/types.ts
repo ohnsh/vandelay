@@ -71,6 +71,8 @@ export interface Report {
   findings: Finding[];
   correlations: Correlation[];
   issues: Issue[];
+  /** Complete decoded-frame inventory; OCR text is represented only by fingerprints. */
+  frames?: import("./masks.ts").FrameRecord[];
 }
 /** JSON Pointers are evaluated on each JSONL record / top-level JSON array element. */
 export interface Mapping {

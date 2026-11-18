@@ -21,7 +21,7 @@ No media or records are modified. OCR requires macOS, Swift, FFmpeg, and ffprobe
 ${reviewHelp}
 `;
 export async function main(args = process.argv.slice(2)): Promise<number> {
-  if (["review", "apply-review"].includes(args[0])) return reviewCLI(args);
+  if (["review", "apply-review", "render-review"].includes(args[0])) return reviewCLI(args);
   const { values, positionals } = parseArgs({
     args, allowPositionals: true, strict: true,
     options: {

@@ -30,6 +30,11 @@ export function validateManifest(value: unknown): asserts value is PublicationMa
   assert(sources === undefined || (Array.isArray(sources) && sources.length > 0 &&
     sources.every((s: unknown) => typeof s === 'string' && /^[a-z0-9][a-z0-9_-]*$/.test(s)) &&
     sources.every((s: string, i: number) => i === 0 || sources[i - 1] < s)), 'source selection')
+  if (value.configuration.redaction !== undefined) {
+    const redaction = value.configuration.redaction
+    assert(object(redaction) && ['reportSha256', 'reviewSha256', 'recipe']
+      .every(k => typeof redaction[k] === 'string' && /^[a-f0-9]{64}$/.test(redaction[k])), 'redaction provenance')
+  }
   assert(Array.isArray(value.days), 'day inventory')
   const dates = new Set<string>()
   for (const day of value.days) {

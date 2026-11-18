@@ -4,3 +4,5 @@ export { pointer } from "./inputs.ts";
 export type * from "./types.ts";
 export { groupFindings, publication, validateReview, parseReport, emptyReview } from "./review/model.ts";
 export type { ReviewState, ReviewEntry, ReviewGroup, PublicationManifest, Decision } from "./review/model.ts";
+export * from "./masks.ts";
+export * from "./rendition.ts";

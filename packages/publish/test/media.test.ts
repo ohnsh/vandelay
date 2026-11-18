@@ -6,6 +6,7 @@ import { digest, record, scope } from '@vandelay/ddb/model'
 import { projectDay } from '../src/project'
 import { prepareMedia, run } from '../src/media'
 import { clipPresentation } from '../src/presentation'
+import { scan, planMasks, frameID, groupFindings, emptyReview, ReviewedRendition } from '@vandelay/autoredact'
 
 const root = mkdtempSync(join(tmpdir(), 'vandelay-publish-media-'))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
@@ -97,6 +98,34 @@ test.each(['dayflow', 'daycap'] as const)('%s all-capture shared chunks and expl
   expect(await prepareMedia([missing], root, cache, true)).toEqual([])
   expect(missing.frames[0].previewStatus).toContain('missing')
   if (type === 'daycap') expect(bytes.includes(Buffer.from('moof'))).toBe(true)
+  const report = await scan([path], { ocr: async () => ({
+    recognize: async () => ({ width: 128, height: 72, lines: [{ text: 'same label', box: [0, 0, 1, 1], confidence: 1 }] }),
+    close: async () => {},
+  }) })
+  const reportHash = digest(JSON.stringify(report)), review = emptyReview(reportHash)
+  review.maskPlan = planMasks(report, undefined, frameID(report.frames![0].source, 0), [{
+    box: [0, 0, 1, 1], anchor: report.frames![0].regions[0], scope: { start: 0, end: 5 },
+  }])
+  review.schema = 'autoredact.review/v2'
+  for (const group of groupFindings(report)) review.decisions[group.id] = {
+    decision: group.frame === 1 ? 'withhold' : 'publish', note: '', updatedAt: new Date().toISOString(),
+  }
+  const rendition = new ReviewedRendition(report, review, reportHash, digest(JSON.stringify(review)))
+  const masked = make()
+  const rendered = await prepareMedia([masked], root, cache, true, 1, rendition)
+  expect(masked.frames[1].playback).toBeUndefined()
+  const maskedMovie = rendered.find(a => a.mediaType === 'video/mp4')!
+  expect(maskedMovie.sha256).not.toBe(movie.sha256)
+  expect(maskedMovie.inputs.map(f => f.frameIndex)).toEqual([0, 2, 3, 4, 5])
+  expect(maskedMovie.recipe).toContain(rendition.digest)
+  for (const asset of rendered) {
+    const decoder = Bun.spawn(['ffmpeg', '-v', 'error', '-i', join(cache, asset.path),
+      '-vf', 'scale=1:1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { stdout: 'pipe', stderr: 'pipe' })
+    const rgb = new Uint8Array(await new Response(decoder.stdout).arrayBuffer())
+    expect(await decoder.exited).toBe(0)
+    expect([...rgb].every(v => v < 8)).toBe(true)
+  }
+  expect(await prepareMedia([make()], root, cache, true, 1, rendition)).toEqual(rendered)
   writeFileSync(path, 'changed source')
   await expect(prepareMedia([make()], root, cache, true)).rejects.toThrow('hash/size mismatch')
 }, 60000)

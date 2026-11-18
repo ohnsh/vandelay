@@ -15,9 +15,60 @@ It is useful with Vandelay's collected Daycap and Dayflow records and media.
 
 A completed scan with no findings is **silent and exits 0**. Findings exit 1.
 Incomplete scans or invalid invocations exit 2, even if findings also exist.
-Scanning never modifies the inputs or renders redactions.
+Scanning never modifies inputs. Review can plan masks, and `render-review` or the
+Vandelay publisher can render approved derivatives.
 
 ## Review in the browser
+
+### Selective masking
+
+New scans include every decoded frame and fingerprinted OCR regions. In review,
+**Pending** shows findings and edited frames needing approval; **All** also exposes
+unflagged frames. Old reports still support decisions; rescan them to enable masking.
+
+Click an OCR region to create an anchored opaque mask, or choose **Add free mask**.
+Drag to move, drag its corner to resize, or edit normalized coordinates numerically.
+For an anchored mask, optionally enable **Follow matching OCR in this source** and
+choose an inclusive first/last frame range. Exact case-sensitive NFC/whitespace-normalized
+matches receive the same relative geometry. A changed OCR string or line segmentation
+does not match. Physical aliases of identical media share masks.
+
+**Save masks** persists the plan and invalidates approvals on affected frames.
+Inspect propagated frames and choose **Approve masked frame**. Following masks link
+back to their origin for editing/removal. Unsaved edits must be saved or discarded
+before changing frames or deciding. Original media stays intact.
+
+Mask-bearing reviews and exported manifests use **v2**, so consumers that only know
+v1 reject them rather than ignoring the masks. Original masked files remain withheld;
+approval applies to their derivative. OCR fingerprints and review files stay private.
+
+Render lossless replacement frames and their source-to-output mapping:
+
+```sh
+bun src/cli.ts render-review report.json --review report.review.json --out ./new-rendition
+```
+
+The output directory must not exist. `manifest.json` binds source hashes/frame indexes/
+presentation times to masked PNG hashes. Only approved masked frames are rendered;
+this directory is not a full publication. Complete scan/review is required.
+
+Build a reviewed Vandelay publication (from the workspace root):
+
+```sh
+bun packages/publish/src/cli.ts build \
+  --repo ./data --commit HEAD --day 2026-11-14 \
+  --media-archive ~/.local/share/vandelay/media \
+  --redaction-report /absolute/report.json \
+  --redaction-review /absolute/report.review.json \
+  --out ./reviewed-publication
+```
+
+Scan the selected bundle directories, including evidence and manifests, before
+reviewing. Publication verifies exact pinned text/media inputs; pending reviews,
+incomplete scans, unscanned selected inputs and withheld text block the build.
+Withheld frames are omitted from playback. Masks apply to both posters and shared
+video chunks before resizing/encoding. `--media-urls` cannot accompany reviewed builds.
+Text replacement is not implemented; pixel masking never approves associated text.
 
 ```sh
 bun src/cli.ts review reports/report-dayflow-2026-11-07.json
@@ -108,9 +159,9 @@ being marked publish. Inputs without findings are eligible only under the scan's
 declared scope and completion status.
 
 A future publishing/redaction step can use frame decisions to create derivatives.
-This tool currently produces decisions, not edited media, text replacements, or
-uploads. Consumers must check the input hashes before applying the manifest to
-actual files.
+`render-review` produces approved frame derivatives; the publisher assembles reviewed
+containers. Text replacements and uploads are not AutoRedact operations. Consumers
+must check input hashes and understand the manifest version before applying decisions.
 
 ## Run
 
@@ -265,6 +316,7 @@ const report = await scan(["/absolute/export/records.jsonl", "/absolute/export/v
 - Cross-source correlations and incomplete-scan issues.
 
 Matched secrets, source text, and OCR transcripts are not written into reports.
+New reports retain all OCR region boxes/IDs and normalized-text fingerprints for masking.
 Paths, record IDs, and other locators can still be private; keep reports local.
 Inputs are rehashed after scanning to detect changes during a run. The local Swift
 worker is built into `~/Library/Caches/autoredact`; transient decoded PNGs live in

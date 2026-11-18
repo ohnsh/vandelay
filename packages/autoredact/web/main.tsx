@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import type { Report } from "../src/types.ts";
 import type { Decision, ReviewEntry, ReviewGroup, ReviewState } from "../src/review/model.ts";
 import "./style.css";
+import { MaskEditor } from "./mask-editor.tsx";
+import type { Mask, AppliedMask } from "../src/masks.ts";
+const noMasks: AppliedMask[] = [];
 
 interface Session {
   name: string; reportSha256: string; report: Report;
@@ -25,6 +28,7 @@ const label = (g: ReviewGroup) => g.wallTime ? new Date(g.wallTime).toLocaleTime
   g.kind === "frame" ? `Frame ${g.frame}` : g.recordId ?? "Text record";
 const countLabel = (n: number, singular: string) => `${n.toLocaleString()} ${singular}${n === 1 ? "" : "s"}`;
 const decisionLabel = (d?: Decision) => d === "withhold" ? "Withhold" : d === "publish" ? "Publish" : "Unreviewed";
+const required = (g: ReviewGroup, state: ReviewState) => g.findings.length > 0 || !!state.maskPlan?.reviewFrames.includes(g.id);
 
 function App() {
   const [session, setSession] = useState<Session>();
@@ -37,34 +41,42 @@ function App() {
   const [note, setNote] = useState("");
   const [autoNext, setAutoNext] = useState(true);
   const [undo, setUndo] = useState<{ id: string; previous?: ReviewEntry }>();
+  const [dirty, setDirty] = useState(false);
   const busy = useRef(false);
   const load = useCallback(async () => {
     setError("");
     try {
       const data = await api<Session>("/api/session");
       setSession(data);
-      setSelected(data.groups.find(g => !data.review.decisions[g.id])?.id ?? null);
+      setSelected(data.groups.find(g => required(g, data.review) && !data.review.decisions[g.id])?.id ?? null);
     } catch (e) { setError(String((e as Error).message)); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!dirty) return;
+    const prevent = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", prevent);
+    return () => window.removeEventListener("beforeunload", prevent);
+  }, [dirty]);
   const group = session?.groups.find(g => g.id === selected);
   const entry = selected ? session?.review.decisions[selected] : undefined;
   useEffect(() => { setNote(entry?.note ?? ""); }, [selected, entry?.note]);
   const matches = (g: ReviewGroup, state: ReviewState) =>
-    (filter === "all" || (state.decisions[g.id]?.decision ?? "unreviewed") === filter) &&
+    (filter === "all" || ((filter !== "unreviewed" || required(g, state)) && (state.decisions[g.id]?.decision ?? "unreviewed") === filter)) &&
     `${g.source} ${g.recordId ?? ""} ${g.frame ?? ""} ${label(g)} ${g.findings.map(f => f.rule).join(" ")}`.toLowerCase().includes(query.toLowerCase());
   const visible = session?.groups.filter(g => matches(g, session.review)) ?? [];
-  const reviewed = session ? Object.keys(session.review.decisions).length : 0;
-  const withheld = session ? Object.values(session.review.decisions).filter(d => d.decision === "withhold").length : 0;
+  const requiredGroups = session?.groups.filter(g => required(g, session.review)) ?? [];
+  const reviewed = session ? requiredGroups.filter(g => session.review.decisions[g.id]).length : 0;
+  const withheld = session ? requiredGroups.filter(g => session.review.decisions[g.id]?.decision === "withhold").length : 0;
   const published = reviewed - withheld;
-  const remaining = (session?.groups.length ?? 0) - reviewed;
+  const remaining = requiredGroups.length - reviewed;
   const navigate = (direction: number) => {
-    if (busy.current || !visible.length) return;
+    if (busy.current || dirty || !visible.length) return;
     const index = visible.findIndex(g => g.id === selected);
     setSelected(visible[Math.max(0, Math.min(visible.length - 1, index + direction))].id);
   };
   const decide = async (decision: Decision | null, id = selected, previousNote = note, isUndo = false) => {
-    if (!session || !id || busy.current) return;
+    if (!session || !id || busy.current || dirty) return;
     busy.current = true; setSaving(true); setError("");
     try {
       const previous = session.review.decisions[id];
@@ -88,6 +100,18 @@ function App() {
         "This review changed in another session. Reload before continuing; your last action was not saved." : `Could not save: ${code}`);
     } finally { busy.current = false; setSaving(false); }
   };
+  const saveMasks = async (masks: Mask[]) => {
+    if (!session || !selected || busy.current) return false;
+    busy.current = true; setSaving(true); setError("");
+    try {
+      const review = await api<ReviewState>("/api/masks", { method: "POST", body: JSON.stringify({
+        revision: session.review.revision, groupId: selected, masks,
+      }) });
+      setSession({ ...session, review }); setUndo(undefined);
+      setSaved(`Masks saved · revision ${review.revision}`); return true;
+    } catch (e) { setError((e as Error).message); return false; }
+    finally { busy.current = false; setSaving(false); }
+  };
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
@@ -107,7 +131,7 @@ function App() {
   if (!session) return <div className="loading-page"><div className="brand-mark">a</div>
     <h1>AutoRedact review</h1><p>{error || "Opening your scan…"}</p>{error && <button onClick={load}>Try again</button>}</div>;
   const incomplete = session.report.status === "incomplete" || session.report.issues.length > 0;
-  const progress = session.groups.length ? reviewed / session.groups.length * 100 : 100;
+  const progress = requiredGroups.length ? reviewed / requiredGroups.length * 100 : 100;
   const related = group ? session.report.correlations.flatMap(c => {
     const ids = new Set(group.findings.map(f => f.id));
     if (!ids.has(c.textFinding) && !c.visualFindings.some(id => ids.has(id))) return [];
@@ -127,7 +151,7 @@ function App() {
       <div><div className="eyebrow">PRE-PUBLICATION CHECK</div><h1>Keep the work. Catch the secrets.</h1>
         <p className="report-name">{session.name} <span className="dot">·</span> {countLabel(session.report.coverage.frames, "frame")} scanned <span className="dot">·</span> {countLabel(session.report.findings.length, "finding")}</p></div>
       <div className="progress-block">
-        <div className="progress-caption"><strong>{reviewed}<span> / {session.groups.length} reviewed</span></strong><span>{Math.round(progress)}%</span></div>
+        <div className="progress-caption"><strong>{reviewed}<span> / {requiredGroups.length} required reviews</span></strong><span>{Math.round(progress)}%</span></div>
         <div className="progress-track"><div style={{ width: `${progress}%` }} /></div>
         <div className="progress-legend"><span><i className="dot-publish" /> {published} publish</span><span><i className="dot-withhold" /> {withheld} withhold</span><span>{remaining} remaining</span></div>
       </div>
@@ -138,22 +162,22 @@ function App() {
     <main className="workspace">
       <aside className="queue">
         <div className="queue-heading"><h2>Review queue</h2><span className="count">{session.groups.length}</span></div>
-        <p className="queue-explanation">One decision per frame or text item.<br />Repeated detections are grouped.</p>
+        <p className="queue-explanation">Pending shows findings and edited frames.<br />All includes every inventoried frame for manual masking.</p>
         <input className="search" aria-label="Search findings" placeholder="Search rules, files, frames…" value={query} onChange={e => setQuery(e.target.value)} />
         <div className="filters" aria-label="Filter review items">
           {(["unreviewed", "all", "withhold", "publish"] as Filter[]).map(f => <button key={f} className={filter === f ? "active" : ""}
-            onClick={() => { setFilter(f); const next = session.groups.find(g => f === "all" || (session.review.decisions[g.id]?.decision ?? "unreviewed") === f); setSelected(next?.id ?? null); }}>
+            disabled={saving || dirty} onClick={() => { setFilter(f); const next = session.groups.find(g => f === "all" || ((f !== "unreviewed" || required(g, session.review)) && (session.review.decisions[g.id]?.decision ?? "unreviewed") === f)); setSelected(next?.id ?? null); }}>
             {f === "unreviewed" ? "Pending" : f === "all" ? "All" : decisionLabel(f)}{f === "unreviewed" && <span>{remaining}</span>}
           </button>)}
         </div>
         <div className="queue-list">
           {visible.map(g => {
             const decision = session.review.decisions[g.id]?.decision;
-            return <button key={g.id} className={`queue-item ${selected === g.id ? "selected" : ""}`} onClick={() => setSelected(g.id)} disabled={saving}>
+            return <button key={g.id} className={`queue-item ${selected === g.id ? "selected" : ""}`} onClick={() => setSelected(g.id)} disabled={saving || dirty}>
               <div className={`queue-icon ${decision ?? ""}`}>{decision === "publish" ? "✓" : decision === "withhold" ? "−" : g.kind === "frame" ? "▣" : "≡"}</div>
               <div className="queue-item-body"><div className="queue-title">{label(g)}<span className={`tiny-status ${decision ?? ""}`}>{decisionLabel(decision)}</span></div>
                 <div className="queue-source">{short(g.source)}</div>
-                <div className="queue-rule">{[...new Set(g.findings.map(f => f.rule))].join(" · ")}</div>
+                <div className="queue-rule">{session.review.maskPlan?.frames[g.id]?.length ? "Masked · " : ""}{[...new Set(g.findings.map(f => f.rule))].join(" · ") || "No automatic findings"}</div>
                 <div className="queue-meta">{g.kind === "frame" ? `${g.boxes.length} regions · ${g.findings.length} detections` : countLabel(g.findings.length, "detection")}</div>
               </div>
             </button>;
@@ -175,19 +199,33 @@ function App() {
               <span>{Math.max(0, visible.findIndex(g => g.id === selected) + 1)} / {visible.length}</span>
               <button aria-label="Next item" title="Next (J)" onClick={() => navigate(1)} disabled={saving || visible.findIndex(g => g.id === selected) >= visible.length - 1}>→</button></div>
           </div>
-          <Inspector key={group.id} group={group} />
-          {!!related.length && <div className="related">Linked evidence: {[...new Set(related)].map(id => <button key={id} onClick={() => setSelected(id)}>{label(session.groups.find(g => g.id === id)!)}</button>)}</div>}
+          {session.report.frames?.find(f => f.source === group.source && f.frame === group.frame) ? <><MaskEditor
+            key={group.id} groupId={group.id} frame={session.report.frames.find(f => f.source === group.source && f.frame === group.frame)!}
+            maxFrame={Math.max(...session.report.frames.filter(f => f.source === group.source).map(f => f.frame))}
+            applied={session.review.maskPlan?.frames[group.id] ?? noMasks}
+            imageURL={assetURL(`/api/frame/${group.id}`)} disabled={saving} onDirty={setDirty} save={saveMasks} />
+            <details className="provenance"><summary>Source & original detections · {group.findings.length} findings</summary>
+              <div className="source-path">{group.source}</div>
+              {group.findings.map(f => <div key={f.id}><strong>{f.rule}</strong> · {f.severity} · {f.pass}
+                <pre>{JSON.stringify({ id: f.id, boxes: f.boxes }, null, 2)}</pre></div>)}
+            </details></> :
+            <Inspector key={group.id} group={group} />}
+          {[...new Set((session.review.maskPlan?.frames[group.id] ?? []).map(m => m.origin))].filter(id => id !== group.id)
+            .map(id => <button key={id} disabled={saving || dirty} onClick={() => { setFilter("all"); setSelected(id); }}>
+              Edit following-mask origin · {label(session.groups.find(g => g.id === id)!)}
+            </button>)}
+          {!!related.length && <div className="related">Linked evidence: {[...new Set(related)].map(id => <button key={id} disabled={dirty || saving} onClick={() => setSelected(id)}>{label(session.groups.find(g => g.id === id)!)}</button>)}</div>}
           <div className="decision-panel">
             <div className="decision-heading"><div><h3>Your decision</h3><p>Applies to all {group.findings.length} detections on this {group.kind === "frame" ? "frame" : "text item"}.</p></div>
               {entry && <button className="text-button" onClick={() => decide(null)} disabled={saving}>Reset to unreviewed <kbd>U</kbd></button>}</div>
             <label className="note-label" htmlFor="note">Review note <span>optional · saved with your decision</span></label>
             <textarea id="note" value={note} maxLength={4000} rows={2} placeholder="Why should this be withheld or published?" onChange={e => setNote(e.target.value)} disabled={saving} />
             <div className="decision-actions">
-              <button className={`decision withhold ${entry?.decision === "withhold" ? "chosen" : ""}`} onClick={() => decide("withhold")} disabled={saving}>
+              <button className={`decision withhold ${entry?.decision === "withhold" ? "chosen" : ""}`} onClick={() => decide("withhold")} disabled={saving || dirty}>
                 <span className="decision-symbol">−</span><span><strong>Confirmed · withhold</strong><small>Keep this item out of publication</small></span><kbd>C</kbd>
               </button>
-              <button className={`decision publish ${entry?.decision === "publish" ? "chosen" : ""}`} onClick={() => decide("publish")} disabled={saving}>
-                <span className="decision-symbol">✓</span><span><strong>False positive · publish</strong><small>These detections do not require withholding</small></span><kbd>F</kbd>
+              <button className={`decision publish ${entry?.decision === "publish" ? "chosen" : ""}`} onClick={() => decide("publish")} disabled={saving || dirty}>
+                <span className="decision-symbol">✓</span><span><strong>{session.review.maskPlan?.frames[group.id]?.length ? "Approve masked frame" : "False positive · publish"}</strong><small>Approve the saved rendition for publication</small></span><kbd>F</kbd>
               </button>
             </div>
             <div className="decision-bottom"><label><input type="checkbox" checked={autoNext} onChange={e => setAutoNext(e.target.checked)} /> Advance to next unreviewed item</label>

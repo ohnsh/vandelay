@@ -45,6 +45,7 @@
       "name": "@vandelay/publish",
       "version": "0.1.0",
       "dependencies": {
+        "@vandelay/autoredact": "workspace:*",
         "@vandelay/ddb": "workspace:*",
         "aws4fetch": "^1.0.20",
       },

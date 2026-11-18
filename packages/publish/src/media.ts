@@ -4,6 +4,7 @@ import { digest, safePath } from '@vandelay/ddb/model'
 import { encodeJSON as encode } from './json'
 import { at, type Asset, type Clip, type DayView, type Frame } from './model'
 import { frameSelection } from './frame-selection'
+import { maskFilters, type ReviewedRendition } from '@vandelay/autoredact'
 
 export async function run(argv: string[]): Promise<string> {
   const child = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe' })
@@ -19,10 +20,16 @@ const streamIdentity = (f: Frame) => JSON.stringify([f.source, f.stream ?? null]
 
 /** Every published source frame is encoded once, regardless of how many playlists use it. */
 export async function prepareMedia(
-  days: DayView[], root: string, cache: string, enabled: boolean, stride = 1,
+  days: DayView[], root: string, cache: string, enabled: boolean, stride = 1, rendition?: ReviewedRendition,
 ): Promise<Asset[]> {
   if (![1, 2, 3, 4].includes(stride)) throw new Error('Capture stride must be 1, 2, 3 or 4')
   const all = days.flatMap(d => d.frames)
+  for (const f of all) if (f.media && rendition && !rendition.allowsFrame(f.media.sha256, f.frameIndex ?? 0)) {
+    f.previewStatus = 'Withheld by AutoRedact review'
+    delete f.media
+    delete f.preview
+    delete f.playback
+  }
   const wanted = new Set<Frame>()
   for (const day of days) {
     const streams = new Map<string, Frame[]>()
@@ -43,7 +50,11 @@ export async function prepareMedia(
   }
   mkdirSync(cache, { recursive: true })
   const version = (await run(['ffmpeg', '-version'])).split('\n')[0]
-  const recipe = `vandelay-chunk/v2:${version}:fps4:1280x720:h264-crf18:gop16:no-bframes:240frames:daycap-gap15s-times-stride`
+  const recipe = `vandelay-chunk/v2:${version}:fps4:1280x720:h264-crf18:gop16:no-bframes:240frames:daycap-gap15s-times-stride${rendition ? `:autoredact:${rendition.digest}` : ''}`
+  const filtersFor = (hash: string, indices: number[]) => {
+    const selected = new Set(indices)
+    return maskFilters((rendition?.masksFor(hash) ?? []).filter(m => selected.has(m.frame)))
+  }
   const assets = new Map<string, Asset>()
   const remember = (asset: Asset) => {
     const previous = assets.get(asset.path)
@@ -116,7 +127,7 @@ export async function prepareMedia(
       const temp = join(cache, `${posterKey}.tmp.webp`)
       try {
         await run(['ffmpeg', '-v', 'error', '-i', path, '-vf',
-          `select=eq(n\\,${first}),scale=w='min(1280,iw)':h=-2`, '-frames:v', '1',
+          [...filtersFor(hash, [first]), `select=eq(n\\,${first}),scale=w='min(1280,iw)':h=-2`].join(','), '-frames:v', '1',
           '-c:v', 'libwebp', '-quality', '85', '-threads', '2', '-y', temp])
         poster = save(posterKey, temp, [{ sha256: hash, frameIndex: first, outputFrame: 0 }], 'webp')
       } finally { rmSync(temp, { force: true }) }
@@ -179,17 +190,18 @@ export async function prepareMedia(
         else runs.push([frame])
       }
       const filters = runs.map((frames, i) =>
-        `[${i}:v:0]select=${frameSelection(frames.map(f => f.frameIndex ?? 0))},` +
+        `[${i}:v:0]${[...filtersFor(frames[0].media!.sha256, frames.map(f => f.frameIndex ?? 0)), `select=${frameSelection(frames.map(f => f.frameIndex ?? 0))}`].join(',')},` +
         // setpts alone retains source durations; CFR then duplicates early frames.
         `settb=1/1000000,setpts=N/(4*TB),fps=4,trim=end_frame=${frames.length},` +
         `scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}]`)
       filters.push(runs.map((_, i) => `[v${i}]`).join('') +
         `concat=n=${runs.length}:v=1:a=0[out]`)
       try {
+        writeFileSync(`${temp}.filter`, filters.join(';'), { mode: 0o600 })
         await run([
           'ffmpeg', '-v', 'error', '-filter_complex_threads', '1',
           ...runs.flatMap(frames => ['-threads', '2', '-i', groups.get(frames[0].media!.sha256)!.path]),
-          '-filter_complex', filters.join(';'), '-map', '[out]', '-an',
+          '-/filter_complex', `${temp}.filter`, '-map', '[out]', '-an',
           '-r', '4', '-fps_mode', 'cfr', '-frames:v', String(chunk.length),
           '-c:v', 'libx264', '-threads', '2', '-preset', 'fast', '-crf', '18',
           '-g', '16', '-bf', '0', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-y', temp,
@@ -202,7 +214,7 @@ export async function prepareMedia(
             Math.abs(Number(output.duration) - chunk.length / 4) > 0.00001)
           throw new Error('Unexpected timelapse frame count or duration')
         asset = save(key, temp, inputs, 'mp4')
-      } finally { rmSync(temp, { force: true }) }
+      } finally { rmSync(temp, { force: true }); rmSync(`${temp}.filter`, { force: true }) }
     }
     remember(asset)
     chunk.forEach((frame, ordinal) => locations.set(frameIdentity(frame), {

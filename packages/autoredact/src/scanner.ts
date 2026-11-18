@@ -2,6 +2,7 @@ import { inventory, fileHash, type InputOptions } from "./inputs.ts";
 import { frames, probe } from "./media.ts";
 import { visionOCR } from "./ocr.ts";
 import { hash, rulesIdentity, scanOCR, scanText, type Match } from "./rules.ts";
+import { fingerprint } from "./masks.ts";
 import type { Anchor, Finding, OCR, Report, TextItem } from "./types.ts";
 
 export interface ScanOptions extends InputOptions {
@@ -11,12 +12,12 @@ export interface ScanOptions extends InputOptions {
 export async function scan(paths: string[], options: ScanOptions = {}): Promise<Report> {
   const input = await inventory(paths, options);
   const report: Report = {
-    schema: "autoredact.scan/v1", scanner: "autoredact/0.2.0",
+    schema: "autoredact.scan/v1", scanner: "autoredact/0.3.0",
     rules: rulesIdentity,
     policy: { video: "every-decoded-frame", ocr: "apple-vision-accurate", scrutiny: "overlapping-tiles", scope: "text-and-visual-secrets" },
     status: "no-findings", inputs: input.files,
     coverage: { textItems: 0, frames: 0, scrutinyFrames: 0, emptyOCRFrames: 0 },
-    findings: [], correlations: [], issues: [...input.issues],
+    findings: [], correlations: [], issues: [...input.issues], frames: [],
   };
   const seen = new Set<string>();
   function finding(match: Match, location: Omit<Finding, "id" | "rule" | "severity" | "boxes">): string {
@@ -62,6 +63,12 @@ export async function scan(paths: string[], options: ScanOptions = {}): Promise<
             (t.anchor.frame !== undefined ? t.anchor.frame === frame.index :
               t.anchor.seconds !== undefined ? Math.abs(t.anchor.seconds - (frame.seconds ?? 0)) <= 0.5 : info.image));
           const base = await ocr.recognize(frame.path);
+          report.frames!.push({ source: file.path, frame: frame.index,
+            seconds: info.image ? undefined : frame.seconds,
+            regions: base.lines.map((line, i) => ({
+              id: hash(JSON.stringify([file.sha256, frame.index, i, line.box])),
+              box: line.box, textHash: fingerprint(line.text),
+            })) });
           report.coverage.frames++;
           if (!base.lines.length) report.coverage.emptyOCRFrames++;
           const matches = scanOCR(base.lines);
