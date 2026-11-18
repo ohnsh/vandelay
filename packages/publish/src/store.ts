@@ -3,7 +3,8 @@ import { dirname, join } from 'node:path'
 import { digest, safePath } from '@vandelay/ddb/model'
 import { encodeJSON as encode } from './json'
 import type { Asset, Current, ObjectRef, Publication, PublicationManifest, PublishedDay } from './model'
-import { validateDay, validateManifest } from './validate'
+import { dailyPreview } from './preview'
+import { validateDay, validateManifest, validatePlayback, validatePreview } from './validate'
 
 /** Append-only object writes; a completed generation becomes visible with one pointer replacement. */
 export function writePublication(root: string, publication: Publication, assets: Asset[], cache: string): Current {
@@ -47,8 +48,17 @@ export function writePublication(root: string, publication: Publication, assets:
         })),
       }
       validateDay(output)
-      const bytes = encode(output)
-      return { scope: day.scope, object: put(`days/${day.scope.day}/${digest(bytes)}.json`, bytes) }
+      const putJSON = (prefix: string, value: unknown) => {
+        const bytes = encode(value)
+        return put(`${prefix}/${digest(bytes)}.json`, bytes)
+      }
+      const preview = dailyPreview(output, playback => {
+        validatePlayback(playback)
+        return putJSON('playback', playback)
+      })
+      validatePreview(preview)
+      return { scope: day.scope, object: putJSON(`days/${day.scope.day}`, output),
+        preview: putJSON(`previews/${day.scope.day}`, preview) }
     }),
   }
   validateManifest(manifest)

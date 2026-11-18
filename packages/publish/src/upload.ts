@@ -22,13 +22,17 @@ export function r2Store(endpoint: string, bucket: string): ObjectStore {
   const url = (path: string) => new URL(`${encodeURIComponent(bucket)}/${path}`, root).href
   return {
     async head(path) {
-      const response = await aws.fetch(url(path), { method: 'HEAD' })
+      // Compare stored bytes, not a negotiated gzip representation (which may omit Content-Length).
+      const response = await aws.fetch(url(path), { method: 'HEAD', headers: { 'accept-encoding': 'identity' } })
       if (response.status === 404) return undefined
       if (!response.ok) throw new Error(`R2 HEAD ${path}: ${response.status}`)
       const etag = response.headers.get('etag')
       if (!etag) throw new Error('R2 response missing ETag')
+      const length = response.headers.get('content-length')
+      if (length === null || !/^\d+$/.test(length) || !Number.isSafeInteger(Number(length)))
+        throw new Error(`R2 HEAD ${path}: missing or invalid Content-Length`)
       return { etag, sha256: response.headers.get('x-amz-meta-sha256') ?? undefined,
-        bytes: Number(response.headers.get('content-length')) }
+        bytes: Number(length) }
     },
     async put(path, bytes, options) {
       const response = await aws.fetch(url(path), {
@@ -53,10 +57,24 @@ export async function upload(root: string, store: ObjectStore) {
   const currentBytes = await read('current.json')
   const reader = await openPublication(read, JSON.parse(currentBytes.toString()))
   const assets = new Map<string, ObjectRef & { mediaType: string }>()
-  for (const day of reader.manifest.days)
-    for (const asset of (await reader.day(day.scope.day))!.assets) assets.set(asset.path, asset)
+  const maps = new Map<string, ObjectRef>()
+  const previews: ObjectRef[] = []
+  for (const day of reader.manifest.days) {
+    const inventory = (await reader.day(day.scope.day))!.assets
+    for (const asset of inventory) assets.set(asset.path, asset)
+    if (!day.preview) continue
+    const paths = new Set(inventory.map(a => a.path))
+    const preview = (await reader.preview(day.scope.day))!
+    for (const t of preview.timelapses) {
+      const map = await reader.playback(t.playback)
+      if ((t.poster && !paths.has(t.poster)) || map.ranges.some(r => !paths.has(r.url)))
+        throw new Error('Uninventoried preview media')
+      maps.set(t.playback.path, t.playback)
+    }
+    previews.push(day.preview)
+  }
   const objects: (ObjectRef & { mediaType?: string })[] = [
-    ...assets.values(), ...reader.manifest.days.map(d => d.object), reader.current.manifest,
+    ...assets.values(), ...maps.values(), ...previews, ...reader.manifest.days.map(d => d.object), reader.current.manifest,
   ]
   const verify = async (ref: ObjectRef) => {
     const bytes = await read(ref.path)

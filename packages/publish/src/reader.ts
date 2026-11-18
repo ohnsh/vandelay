@@ -1,5 +1,5 @@
 import type { Current, ObjectRef, PublicationManifest, PublishedDay } from './model'
-import { objectPath, validateCurrent, validateDay, validateManifest } from './validate'
+import { objectPath, validateCurrent, validateDay, validateManifest, validatePlayback, validatePlaybackRef, validatePreview } from './validate'
 
 /** No filesystem, Bun, or Node dependency: usable in Astro builds and Workers SSR. */
 export type ReadObject = (path: string) => Promise<Uint8Array>
@@ -28,6 +28,20 @@ export async function openPublication(read: ReadObject, pinned?: Current) {
   validateManifest(manifest)
   return {
     current, manifest,
+    async preview(date: string) {
+      const day = manifest.days.find(d => d.scope.day === date)
+      if (!day?.preview) return undefined
+      const preview = await verified(read, day.preview)
+      validatePreview(preview)
+      if (JSON.stringify(preview.scope) !== JSON.stringify(day.scope)) throw new Error('Preview scope disagreement')
+      return preview
+    },
+    async playback(ref: ObjectRef) {
+      validatePlaybackRef(ref)
+      const map = await verified(read, ref)
+      validatePlayback(map)
+      return map
+    },
     async day(date: string): Promise<PublishedDay | undefined> {
       const ref = manifest.days.find(d => d.scope.day === date)
       if (!ref) return undefined

@@ -1,4 +1,4 @@
-import type { Current, ObjectRef, PublicationManifest, PublishedDay } from './model'
+import type { Current, DailyPreview, ObjectRef, PlaybackManifest, PublicationManifest, PublishedDay } from './model'
 
 function assert(value: unknown, message: string): asserts value {
   if (!value) throw new Error(`Invalid publication: ${message}`)
@@ -34,6 +34,38 @@ export function validateManifest(value: unknown): asserts value is PublicationMa
     dates.add(day.scope.day)
     validateRef(day.object)
     assert(day.object.path === `days/${day.scope.day}/${day.object.sha256}.json`, 'day identity')
+    if (day.preview !== undefined) {
+      validateRef(day.preview)
+      assert(day.preview.path === `previews/${day.scope.day}/${day.preview.sha256}.json`, 'preview identity')
+    }
+  }
+}
+export function validatePlaybackRef(ref: unknown): asserts ref is ObjectRef {
+  validateRef(ref)
+  assert(ref.path === `playback/${ref.sha256}.json`, 'playback identity')
+}
+export function validatePlayback(value: unknown): asserts value is PlaybackManifest {
+  assert(object(value) && value.schema === 'vandelay.publish.playback/v1' &&
+    Array.isArray(value.ranges) && value.ranges.length > 0, 'playback manifest')
+  for (const r of value.ranges) {
+    assert(object(r) && typeof r.url === 'string' && /^media\/[a-f0-9]{64}\.mp4$/.test(r.url) &&
+      Number.isFinite(r.start) && Number.isFinite(r.end) && r.start >= 0 && r.end > r.start, 'media range')
+  }
+}
+export function validatePreview(value: unknown): asserts value is DailyPreview {
+  assert(object(value) && value.schema === 'vandelay.publish.preview/v1' && object(value.scope) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value.scope.day) && typeof value.scope.timezone === 'string' &&
+    typeof value.scope.start === 'string' && typeof value.scope.end === 'string', 'preview scope/schema')
+  assert(Array.isArray(value.highlights) && value.highlights.length <= 3 &&
+    Array.isArray(value.timelapses), 'preview collections')
+  for (const h of value.highlights)
+    assert(object(h) && typeof h.at === 'string' && Number.isFinite(Date.parse(h.at)) &&
+      typeof h.anchor === 'string' && typeof h.title === 'string' && typeof h.summary === 'string', 'highlight')
+  for (const t of value.timelapses) {
+    assert(object(t) && typeof t.source === 'string' && typeof t.label === 'string' &&
+      (t.stream === undefined || typeof t.stream === 'string') &&
+      (t.poster === undefined || (typeof t.poster === 'string' && /^media\/[a-f0-9]{64}\.webp$/.test(t.poster))), 'preview timelapse')
+    validatePlaybackRef(t.playback)
   }
 }
 function validateAssets(assets: unknown): asserts assets is any[] {

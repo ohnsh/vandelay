@@ -66,12 +66,21 @@ yet have a Days-specific authentication or webhook configuration.
 import { httpReader, openPublication } from '@vandelay/publish/reader'
 
 const publication = await openPublication(httpReader('https://archive.example.com/'))
+const preview = await publication.preview('2026-11-17') // feed/day card
+// On play, fetch only the selected timelapse's ranges:
+const timelapse = preview?.timelapses[0]
+if (timelapse) {
+  const { ranges } = await publication.playback(timelapse.playback)
+  // Resolve each range.url against https://archive.example.com/ for <video>.
+}
+// On the detailed timeline route:
 const day = await publication.day('2026-11-17')
 ```
 
-`undefined` means the manifest does not contain the date. Fetch, integrity, or
+`undefined` means the manifest does not contain the date (or, for `preview`,
+the pinned generation predates previews). Fetch, integrity, or
 schema failures throw; callers should distinguish failure from an empty day.
-The reader verifies manifest/day bytes against hashes and sizes, then validates
+The reader verifies manifest, day, preview and playback bytes against hashes and sizes, then validates
 their references. Media is fetched directly by browsers; the reader does not
 download or hash every video.
 

@@ -107,13 +107,23 @@ export interface Publication {
   days: DayView[]
 }
 export interface ObjectRef { path: string; sha256: string; bytes: number }
+export interface PlaybackManifest {
+  schema: 'vandelay.publish.playback/v1'
+  ranges: { url: string; start: number; end: number }[]
+}
+export interface DailyPreview {
+  schema: 'vandelay.publish.preview/v1'
+  scope: Scope
+  highlights: { anchor: string; at: string; title: string; summary: string }[]
+  timelapses: { source: string; stream?: string; label: string; poster?: string; playback: ObjectRef }[]
+}
 export interface Asset extends ObjectRef {
   mediaType: 'video/mp4' | 'image/webp'
   recipe: string
   inputs: { sha256: string; frameIndex?: number; presentation?: Frame['presentation']; outputFrame?: number }[]
 }
 export interface PublicationManifest extends Omit<Publication, 'days'> {
-  days: { scope: Scope; object: ObjectRef }[]
+  days: { scope: Scope; object: ObjectRef; preview?: ObjectRef }[]
 }
 export interface Current {
   schema: 'vandelay.publish.current/v1'

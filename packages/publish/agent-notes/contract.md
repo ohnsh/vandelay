@@ -19,6 +19,8 @@ fragment, or URI scheme. Consumers resolve these against a local root or HTTP ba
 | Discovery pointer | `vandelay.publish.current/v1` | `current.json` |
 | Publication manifest | `vandelay.publish/v1` | `publications/<sha256>/manifest.json` |
 | Day projection | `vandelay.publish.day/v1` | `days/YYYY-MM-DD/<sha256>.json` |
+| Daily preview | `vandelay.publish.preview/v1` | `previews/YYYY-MM-DD/<sha256>.json` |
+| Playback manifest | `vandelay.publish.playback/v1` | `playback/<sha256>.json` |
 | Video or poster | MP4 / WebP | `media/<sha256>.mp4` or `.webp` |
 
 `ObjectRef` is `{ path, sha256, bytes }`. Discovery contains `schema` and a
@@ -34,13 +36,30 @@ Manifest fields:
 - `configuration`: `media` (`all` or `none`) and `captureStride` (1–4).
 - `inputDigest`: digest of pinned input selection and configuration.
 - `verification`: archive, signature, and timestamp verification states.
-- `days`: sorted `{ scope, object: ObjectRef }` entries. Scope contains `day`,
+- `days`: sorted `{ scope, object: ObjectRef, preview?: ObjectRef }` entries. Scope contains `day`,
   `timezone`, `start`, and `end`, preserving the archive's calendar/DST semantics.
 
 Metadata-only changes reuse identical day/media objects. Different publication
 versions can retain different renditions of a frame; deduplication is by exact
 object content, not a promise that all historical encodings are identical.
 Objects reachable from retained manifests must not be garbage-collected.
+
+## Lightweight consumers
+
+New generations include `preview` for every day, even if both preview lists are
+empty. Older v1 manifests can omit it. The preview repeats `scope`; `highlights`
+contains up to three timestamped active activity entries in day placement order
+(first, middle, last when there are more than three). Each exposes `anchor`, `at`
+(day placement start/instant), `title` and `summary` (up to 120 and 240 Unicode
+code points respectively). These are excerpts, not generated summaries.
+
+Each preview `timelapses` item describes one day playlist: `source`, optional
+`stream`, `label`, optional `poster` (existing WebP path), and `playback: ObjectRef`.
+The referenced JSON contains `schema` and ordered `ranges` of `{ url, start, end }`.
+`url` is an MP4 path relative to the **publication root**, not the JSON file.
+`[start, end)` is in media seconds. Adjacent captures in the same file coalesce;
+holes, repeats and chunk switches retain their playlist order. Frame identities,
+inspection timestamps and activity-specific clips remain in the full day projection.
 
 ## Per-day projection
 
