@@ -12,3 +12,4 @@ packages/publish/.dist-*/
 .env
 .env.*
 !*.example
+.worktrees/
