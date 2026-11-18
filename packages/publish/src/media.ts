@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { digest, safePath } from '@vandelay/ddb/model'
 import { encodeJSON as encode } from './json'
 import { at, type Asset, type Clip, type DayView, type Frame } from './model'
+import { frameSelection } from './frame-selection'
 
 export async function run(argv: string[]): Promise<string> {
   const child = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe' })
@@ -122,7 +123,7 @@ export async function prepareMedia(
         try {
           await run([
             'ffmpeg', '-v', 'error', '-threads', '2', '-i', path, '-an',
-            '-vf', `select=${chunk.map(i => `eq(n\\,${i})`).join('+')},settb=1/1000000,setpts=N/(4*TB),scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1`,
+            '-vf', `select=${frameSelection(chunk)},settb=1/1000000,setpts=N/(4*TB),scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1`,
             '-r', '4', '-fps_mode', 'cfr', '-frames:v', String(chunk.length),
             '-c:v', 'libx264', '-threads', '2', '-preset', 'fast', '-crf', '18',
             '-g', '16', '-bf', '0', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-y', temp,
