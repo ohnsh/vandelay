@@ -43,7 +43,7 @@ export async function prepareMedia(
   }
   mkdirSync(cache, { recursive: true })
   const version = (await run(['ffmpeg', '-version'])).split('\n')[0]
-  const recipe = `vandelay-chunk/v1:${version}:4fps:1280x720:h264-crf18:gop16:no-bframes:240frames`
+  const recipe = `vandelay-chunk/v2:${version}:fps4:1280x720:h264-crf18:gop16:no-bframes:240frames:daycap-gap15s-times-stride`
   const assets = new Map<string, Asset>()
   const remember = (asset: Asset) => {
     const previous = assets.get(asset.path)
@@ -109,40 +109,6 @@ export async function prepareMedia(
           throw new Error(`Frame/PTS disagreement in ${hash}`)
       }
     }
-    for (let start = 0; start < indices.length; start += 240) {
-      const chunk = indices.slice(start, start + 240)
-      const inputs = chunk.map((i, outputFrame) => ({
-        sha256: hash, frameIndex: i,
-        outputFrame,
-        presentation: frames.find(f => (f.frameIndex ?? 0) === i)!.presentation,
-      }))
-      const key = digest(encode({ recipe, inputs }))
-      let asset = cached(key)
-      if (!asset) {
-        const temp = join(cache, `${key}.tmp.mp4`)
-        try {
-          await run([
-            'ffmpeg', '-v', 'error', '-threads', '2', '-i', path, '-an',
-            '-vf', `select=${frameSelection(chunk)},settb=1/1000000,setpts=N/(4*TB),scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1`,
-            '-r', '4', '-fps_mode', 'cfr', '-frames:v', String(chunk.length),
-            '-c:v', 'libx264', '-threads', '2', '-preset', 'fast', '-crf', '18',
-            '-g', '16', '-bf', '0', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-y', temp,
-          ])
-          const output = JSON.parse(await run([
-            'ffprobe', '-v', 'error', '-count_frames', '-select_streams', 'v:0',
-            '-show_entries', 'stream=nb_read_frames,duration', '-of', 'json', temp,
-          ])).streams[0]
-          if (Number(output.nb_read_frames) !== chunk.length ||
-              Math.abs(Number(output.duration) - chunk.length / 4) > 0.00001)
-            throw new Error('Unexpected timelapse frame count or duration')
-          asset = save(key, temp, inputs, 'mp4')
-        } finally { rmSync(temp, { force: true }) }
-      }
-      remember(asset)
-      chunk.forEach((index, ordinal) => locations.set(JSON.stringify([hash, index]), {
-        asset: asset!.path, offset: ordinal / 4, duration: 0.25,
-      }))
-    }
     // One browsing poster per source object, rather than publishing a second full image sequence.
     const first = indices[0], posterKey = digest(encode({ recipe, hash, first, poster: true }))
     let poster = cached(posterKey)
@@ -159,6 +125,92 @@ export async function prepareMedia(
     posters.set(JSON.stringify([hash, first]), poster.path)
     if (digest(readFileSync(path)) !== hash) throw new Error('Media changed during decoding')
   }
+  const chunks: Frame[][] = []
+  const assigned = new Set<string>()
+  const plan = (frames: Frame[], contiguous: boolean) => {
+    let chunk: Frame[] = []
+    let previous: Frame | undefined
+    for (const frame of frames) {
+      const identity = frameIdentity(frame)
+      const gap = previous ? Date.parse(frame.at) - Date.parse(previous.at) : 0
+      if (chunk.length === 240 || (contiguous && previous &&
+          (frame.session !== previous.session || gap < 0 || gap > 15000 * stride))) {
+        if (chunk.length) chunks.push(chunk)
+        chunk = []
+      }
+      previous = frame
+      // Aliases share the same encoded location, even across days or streams.
+      if (assigned.has(identity)) continue
+      assigned.add(identity)
+      chunk.push(frame)
+    }
+    if (chunk.length) chunks.push(chunk)
+  }
+  // Preserve source-object chunking for Dayflow.
+  for (const group of groups.values())
+    plan(group.frames.filter(f => !f.source.startsWith('daycap/'))
+      .sort((a, b) => (a.frameIndex ?? 0) - (b.frameIndex ?? 0)), false)
+  for (const day of days) {
+    const streams = new Map<string, Frame[]>()
+    for (const frame of day.frames) {
+      if (!wanted.has(frame) || !frame.source.startsWith('daycap/') ||
+          !frame.media || !groups.has(frame.media.sha256)) continue
+      const key = streamIdentity(frame)
+      const frames = streams.get(key) ?? []
+      frames.push(frame); streams.set(key, frames)
+    }
+    for (const frames of streams.values()) plan(frames.sort(chronological), true)
+  }
+  for (const chunk of chunks) {
+    const inputs = chunk.map((f, outputFrame) => ({
+      sha256: f.media!.sha256, frameIndex: f.frameIndex ?? 0,
+      outputFrame, presentation: f.presentation,
+    }))
+    const key = digest(encode({ recipe, inputs }))
+    let asset = cached(key)
+    if (!asset) {
+      const temp = join(cache, `${key}.tmp.mp4`)
+      // Consecutive runs preserve chronological order even if a source object recurs.
+      const runs: Frame[][] = []
+      for (const frame of chunk) {
+        const last = runs.at(-1)
+        if (last && last[0].media!.sha256 === frame.media!.sha256 &&
+            (last.at(-1)!.frameIndex ?? 0) < (frame.frameIndex ?? 0)) last.push(frame)
+        else runs.push([frame])
+      }
+      const filters = runs.map((frames, i) =>
+        `[${i}:v:0]select=${frameSelection(frames.map(f => f.frameIndex ?? 0))},` +
+        // setpts alone retains source durations; CFR then duplicates early frames.
+        `settb=1/1000000,setpts=N/(4*TB),fps=4,trim=end_frame=${frames.length},` +
+        `scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}]`)
+      filters.push(runs.map((_, i) => `[v${i}]`).join('') +
+        `concat=n=${runs.length}:v=1:a=0[out]`)
+      try {
+        await run([
+          'ffmpeg', '-v', 'error', '-filter_complex_threads', '1',
+          ...runs.flatMap(frames => ['-threads', '2', '-i', groups.get(frames[0].media!.sha256)!.path]),
+          '-filter_complex', filters.join(';'), '-map', '[out]', '-an',
+          '-r', '4', '-fps_mode', 'cfr', '-frames:v', String(chunk.length),
+          '-c:v', 'libx264', '-threads', '2', '-preset', 'fast', '-crf', '18',
+          '-g', '16', '-bf', '0', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-y', temp,
+        ])
+        const output = JSON.parse(await run([
+          'ffprobe', '-v', 'error', '-count_frames', '-select_streams', 'v:0',
+          '-show_entries', 'stream=nb_read_frames,duration', '-of', 'json', temp,
+        ])).streams[0]
+        if (Number(output.nb_read_frames) !== chunk.length ||
+            Math.abs(Number(output.duration) - chunk.length / 4) > 0.00001)
+          throw new Error('Unexpected timelapse frame count or duration')
+        asset = save(key, temp, inputs, 'mp4')
+      } finally { rmSync(temp, { force: true }) }
+    }
+    remember(asset)
+    chunk.forEach((frame, ordinal) => locations.set(frameIdentity(frame), {
+      asset: asset!.path, offset: ordinal / 4, duration: 0.25,
+    }))
+  }
+  for (const [hash, group] of groups)
+    if (digest(readFileSync(group.path)) !== hash) throw new Error('Media changed during decoding')
   for (const f of wanted) {
     f.playback = locations.get(frameIdentity(f))
     f.preview = posters.get(frameIdentity(f))

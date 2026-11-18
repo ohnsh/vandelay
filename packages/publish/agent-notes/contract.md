@@ -119,13 +119,31 @@ day/source/stream's chronological capture list: keep indices 0, N, 2N, etc. Capt
 omitted by stride retain metadata and an explicit status. Missing media also retains
 metadata; corrupt media or contradictory index/PTS selectors fail generation.
 
-Retained source frames are grouped by source object and presentation-order index,
-then chunked at 240 frames maximum. Each input frame is encoded once per publication.
+Dayflow frames retain source-object/presentation-order chunking. Daycap frames are
+packed chronologically across source objects within each day/source/stream, stopping
+at session changes or retained-capture gaps greater than 15 seconds times stride.
+This gap threshold allows normal five-second capture jitter; it is a packing
+heuristic, not a claim of continuous coverage. Both use a 240-frame maximum
+(60 playback seconds), with shorter final chunks. Each input hash/frame index is
+encoded once per publication; aliases reuse its playback location.
 Chunks are H.264/yuv420p faststart MP4, no B frames, maximum GOP 16, 1280×720
 letterboxed, four captures per playback second. This implementation transcodes
 to obtain consistent browser decoding and timestamps. It does not claim lossless
 remuxing. Browsing posters use one WebP per source object, rather than a second
 complete sequence of images.
+
+Media recipe v2 normalizes frame durations with `fps=4` after resetting PTS.
+Resetting PTS alone left Daycap's roughly five-second sample durations intact,
+causing CFR duplication to fill a chunk with its first capture. Cache keys include
+the recipe and ordered hash/frame/PTS/output-frame mappings, including every source
+object in a combined chunk. Existing publications require rebuilding and uploading
+to receive corrected media; the wire schema is unchanged.
+
+Implementation observation updated 2026-11-18 against source baseline
+`29115d2215f1414b31230e3df04ef514d1dab11f` plus this change. Evidence:
+`src/media.ts`, `test/media.test.ts` (pixel comparisons with five-second HEVC
+samples; multi-source packing, boundaries, stride and subrange playback).
+The gap heuristic should be revisited if Daycap capture cadence changes.
 
 Day playlists include all retained playable captures for their source/stream.
 Activity playlists include all retained captures of the same source inside the

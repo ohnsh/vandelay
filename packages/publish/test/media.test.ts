@@ -5,12 +5,14 @@ import { join } from 'node:path'
 import { digest, record, scope } from '@vandelay/ddb/model'
 import { projectDay } from '../src/project'
 import { prepareMedia, run } from '../src/media'
+import { clipPresentation } from '../src/presentation'
 
 const root = mkdtempSync(join(tmpdir(), 'vandelay-publish-media-'))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
 test.each(['dayflow', 'daycap'] as const)('%s all-capture shared chunks and explicit stride', async type => {
   const path = join(root, `${type}.mp4`)
-  await run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=128x72:rate=1:duration=6',
+  await run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
+    `testsrc2=size=128x72:rate=${type === 'daycap' ? '1/5' : '1'}:duration=${type === 'daycap' ? 30 : 6}`,
     '-c:v', type === 'daycap' ? 'libx265' : 'libx264',
     ...(type === 'daycap' ? [
       '-x265-params', 'bframes=0:keyint=1:pools=1:frame-threads=1:log-level=error',
@@ -36,8 +38,8 @@ test.each(['dayflow', 'daycap'] as const)('%s all-capture shared chunks and expl
           location: { kind: 'archive-relative', path: `${type}.mp4` },
           ...(type === 'daycap' ? { selector: {
             type: 'video-frame' as const, frame_index: i,
-            presentation: { value: String(i * 1000000), timescale: 1000000 },
-            duration: { value: '1000000', timescale: 1000000 },
+            presentation: { value: String(i * 5000000), timescale: 1000000 },
+            duration: { value: '5000000', timescale: 1000000 },
           } } : {}),
         }],
       }, bounds)!),
@@ -62,6 +64,7 @@ test.each(['dayflow', 'daycap'] as const)('%s all-capture shared chunks and expl
   const decoded = JSON.parse(await run(['ffprobe', '-v', 'error', '-count_frames',
     '-show_entries', 'stream=nb_read_frames,codec_name,duration', '-of', 'json', join(cache, movie.path)]))
   expect(decoded.streams[0]).toMatchObject({ codec_name: 'h264', nb_read_frames: '6', duration: '1.500000' })
+  await expectSameCaptures(path, join(cache, movie.path), 6)
   expect(await prepareMedia([make()], root, cache, true)).toEqual(assets)
   const aliased = make()
   writeFileSync(join(root, `alias-${type}.mp4`), bytes)
@@ -97,3 +100,109 @@ test.each(['dayflow', 'daycap'] as const)('%s all-capture shared chunks and expl
   writeFileSync(path, 'changed source')
   await expect(prepareMedia([make()], root, cache, true)).rejects.toThrow('hash/size mismatch')
 }, 60000)
+
+async function pixels(path: string) {
+  const child = Bun.spawn(['ffmpeg', '-v', 'error', '-i', path, '-vf', 'scale=64:36',
+    '-fps_mode', 'passthrough', '-pix_fmt', 'rgb24', '-f', 'rawvideo', '-'],
+  { stdout: 'pipe', stderr: 'pipe' })
+  const [bytes, stderr, status] = await Promise.all([
+    new Response(child.stdout).arrayBuffer(), new Response(child.stderr).text(), child.exited,
+  ])
+  if (status) throw new Error(stderr)
+  return new Uint8Array(bytes)
+}
+
+async function expectSameCaptures(source: string, output: string, count: number) {
+  const [expected, actual] = await Promise.all([pixels(source), pixels(output)])
+  expect(actual.length).toBe(count * 64 * 36 * 3)
+  expect(expected.length).toBe(actual.length)
+  for (let frame = 0; frame < count; frame++) {
+    let error = 0
+    const size = 64 * 36 * 3
+    for (let i = frame * size; i < (frame + 1) * size; i++)
+      error += Math.abs(expected[i] - actual[i])
+    expect(error / size).toBeLessThan(5)
+  }
+}
+
+test('Daycap packs across source objects to 60s, preserving offsets and boundaries', async () => {
+  const bounds = scope('2026-11-14', 'UTC')
+  const frames: import('../src/model').Frame[] = []
+  for (let source = 0; source < 2; source++) {
+    const path = `long-${source}.mp4`
+    await run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
+      `color=c=${source ? 'blue' : 'red'}:size=128x72:rate=1/5:duration=605`,
+      '-c:v', 'libx264', '-threads', '1', '-y', join(root, path)])
+    const bytes = readFileSync(join(root, path)), hash = digest(bytes)
+    for (let i = 0; i < 120; i++) {
+      const ordinal = source * 120 + i
+      const at = new Date(Date.parse(bounds.start) + ordinal * 5000).toISOString()
+      frames.push({
+        key: `long-${ordinal}`, anchor: `long-${ordinal}`, recordID: `long-${ordinal}`,
+        source: 'daycap/fixture', stream: 'screen', session: 'session',
+        at, time: { model: 'instant', at, basis: 'capture' }, disposition: 'captured',
+        previewStatus: '', frameIndex: i,
+        presentation: { value: String(i * 5000000), timescale: 1000000 },
+        media: { role: 'capture', sha256: hash, bytes: bytes.length,
+          location: { kind: 'archive-relative', path } },
+      })
+    }
+  }
+  const make = () => ({
+    schema: 'vandelay.publish.day/v1' as const, scope: bounds, sources: [],
+    entries: [], timelapses: [], frames: structuredClone(frames),
+  })
+  const cache = join(root, 'long-cache'), day = make()
+  const assets = await prepareMedia([day], root, cache, true)
+  const movies = assets.filter(a => a.mediaType === 'video/mp4')
+  expect(movies).toHaveLength(1)
+  expect(new Set(movies[0].inputs.map(i => i.sha256)).size).toBe(2)
+  expect(movies[0].inputs.map(i => i.outputFrame)).toEqual(Array.from({ length: 240 }, (_, i) => i))
+  expect(day.frames[120].playback!.offset).toBe(30)
+  expect(day.frames[239].playback!.offset).toBe(59.75)
+  const clip = clipPresentation({
+    label: 'Across source boundary', selection: 'activity-time-range',
+    frameKeys: day.frames.slice(118, 122).map(f => f.key),
+  }, new Map(day.frames.map(f => [f.key, f])))
+  expect(clip.map.ranges).toEqual([{ url: movies[0].path, start: 29.5, end: 30.5 }])
+  const output = await pixels(join(cache, movies[0].path))
+  expect(output.length).toBe(240 * 64 * 36 * 3)
+  for (const frame of [0, 119, 120, 239]) {
+    const offset = frame * 64 * 36 * 3
+    expect(output[offset + (frame < 120 ? 0 : 2)]).toBeGreaterThan(240)
+    expect(output[offset + (frame < 120 ? 2 : 0)]).toBeLessThan(10)
+  }
+  expect(await prepareMedia([make()], root, cache, true)).toEqual(assets)
+  const overflow = make()
+  const at = new Date(Date.parse(bounds.start) + 1200000).toISOString()
+  overflow.frames.push({
+    ...structuredClone(frames[239]), key: 'overflow', recordID: 'overflow', anchor: 'overflow',
+    frameIndex: 120, presentation: { value: '600000000', timescale: 1000000 },
+    at, time: { model: 'instant', at, basis: 'capture' },
+  })
+  overflow.frames.push({ ...overflow.frames[0], key: 'alias', recordID: 'alias', anchor: 'alias' })
+  const overflowAssets = await prepareMedia([overflow], root, cache, true)
+  expect(overflowAssets.filter(a => a.mediaType === 'video/mp4').map(a => a.inputs.length).sort((a, b) => a - b))
+    .toEqual([1, 240])
+  expect(overflow.frames[240].playback!.offset).toBe(0)
+  expect(overflow.frames[240].playback!.asset).not.toBe(movies[0].path)
+  expect(overflow.frames[241].playback).toEqual(overflow.frames[0].playback)
+  const sampled = make()
+  const sampledAssets = await prepareMedia([sampled], root, cache, true, 4)
+  expect(sampledAssets.filter(a => a.mediaType === 'video/mp4')).toHaveLength(1)
+  expect(sampled.frames[236].playback!.offset).toBe(14.75)
+  expect(sampled.frames[1].playback).toBeUndefined()
+  for (const boundary of ['gap', 'session', 'stream', 'day'] as const) {
+    const split = make()
+    for (const f of split.frames.slice(120)) {
+      if (boundary === 'gap') f.at = new Date(Date.parse(f.at) + 60000).toISOString()
+      if (boundary === 'session') f.session = 'other'
+      if (boundary === 'stream') f.stream = 'other'
+    }
+    const days = boundary === 'day'
+      ? [{ ...split, frames: split.frames.slice(0, 120) }, { ...split, frames: split.frames.slice(120) }]
+      : [split]
+    const result = await prepareMedia(days, root, cache, true)
+    expect(result.filter(a => a.mediaType === 'video/mp4')).toHaveLength(2)
+  }
+}, 120000)
