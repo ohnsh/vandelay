@@ -13,3 +13,4 @@ packages/publish/.dist-*/
 .env.*
 !*.example
 .worktrees/
+.daycap-export/
