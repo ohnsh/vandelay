@@ -6,3 +6,6 @@ packages/web/.cache/
 packages/web/dist/
 packages/web/.dist-*/
 packages/web/test-results/
+packages/publish/.cache/
+packages/publish/dist/
+packages/publish/.dist-*/

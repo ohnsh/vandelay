@@ -9,8 +9,8 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { digest, encode } from '@vandelay/ddb/model'
+import { dirname, join, resolve } from 'node:path'
+import { digest, encode, safePath } from '@vandelay/ddb/model'
 import { prepare } from './prepare'
 import { indexSearch } from './search'
 
@@ -24,19 +24,21 @@ try {
 }
 const stage = `.dist-${process.pid}`
 try {
-  const { publication, assets } = await prepare(process.argv.slice(2))
+  const { publication, assets, current, copyRoot } = await prepare(process.argv.slice(2))
   const child = Bun.spawn(['bun', 'x', '--no-install', 'astro', 'build'], {
     env: { ...process.env, VANDELAY_WEB_OUT: `./${stage}` },
     stdout: 'inherit',
     stderr: 'inherit',
   })
   if (await child.exited) throw new Error('Astro build failed')
-  mkdirSync(`${stage}/media`, { recursive: true })
-  for (const asset of assets)
-    cpSync(
-      join('.cache/media', asset.path.split('/').at(-1)!),
-      join(stage, asset.path.slice(1)),
-    )
+  if (copyRoot) for (const asset of assets) {
+    const source = safePath(copyRoot, asset.path), bytes = readFileSync(source)
+    if (digest(bytes) !== asset.sha256 || bytes.length !== asset.bytes)
+      throw new Error(`Publication media hash/size mismatch: ${asset.path}`)
+    const target = safePath(stage, asset.path)
+    mkdirSync(dirname(target), { recursive: true })
+    cpSync(source, target)
+  }
   const searchRecords = await indexSearch(publication, stage)
   const walk = (
     root: string,
@@ -61,12 +63,13 @@ try {
       {
         schema: 'vandelay.publication/v1',
         commit: publication.commit,
-        generator: publication.generator,
+        generator: '@vandelay/web/0.1.0',
+        publication: current.manifest,
         generatorDigest: digest(
           encode({
             generatorFiles,
             config: readFileSync('astro.config.mjs', 'utf8'),
-            lock: digest(readFileSync('../../bun.lock')),
+            lock: digest(readFileSync(new URL('../../../bun.lock', import.meta.url))),
           }),
         ),
         inputDigest: publication.inputDigest,

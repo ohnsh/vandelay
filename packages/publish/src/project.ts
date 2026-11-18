@@ -48,16 +48,11 @@ function track(kind: string): Track {
   if (kind.endsWith('.report')) return 'report'
   return 'other'
 }
-function takeEvenly<T>(values: T[], maximum: number): T[] {
-  if (values.length <= maximum) return values
-  return Array.from(
-    { length: maximum },
-    (_, i) => values[Math.round((i * (values.length - 1)) / (maximum - 1))],
-  )
-}
 export function projectDay(bundles: Bundle[], scope: DayView['scope']): DayView {
   const day: DayView = {
+    schema: 'vandelay.publish.day/v1',
     scope,
+    timelapses: [],
     entries: [],
     frames: [],
     sources: bundles.map((b) => ({
@@ -68,13 +63,13 @@ export function projectDay(bundles: Bundle[], scope: DayView['scope']): DayView 
       sha256: b.sha256,
     })),
   }
-  const recordMap = new Map<string, { record: ArchiveRecord; href: string }>()
+  const recordMap = new Map<string, { record: ArchiveRecord }>()
   for (const b of bundles) {
     const slot = `${b.manifest.source.type}/${b.manifest.source.instance}`
     const captures = b.records.filter((r) =>
       ['daycap.capture', 'dayflow.screenshots'].includes(r.kind),
     )
-    for (const [i, r] of captures.entries()) {
+    for (const r of captures) {
       const d = obj(r.data),
         capture = obj(d.capture),
         original = pointer(b.evidence, r.evidence?.pointer)
@@ -95,7 +90,6 @@ export function projectDay(bundles: Bundle[], scope: DayView['scope']): DayView 
         anchor: id,
         source: slot,
         recordID: r.id,
-        href: `/frames/${scope.day}/${slot}/${Math.floor(i / 100) + 1}/#${id}`,
         at: at(r.time)!,
         time: r.time,
         revision: d.revision,
@@ -124,14 +118,13 @@ export function projectDay(bundles: Bundle[], scope: DayView['scope']): DayView 
               'unavailable',
       }
       day.frames.push(f)
-      recordMap.set(identity(slot, r.id), { record: r, href: f.href })
+      recordMap.set(identity(slot, r.id), { record: r })
     }
     for (const r of b.records) {
       const key = identity(slot, r.id)
       if (!recordMap.has(key))
         recordMap.set(key, {
           record: r,
-          href: `/days/${scope.day}/#${anchor(slot, r.id)}`,
         })
     }
   }
@@ -152,7 +145,7 @@ export function projectDay(bundles: Bundle[], scope: DayView['scope']): DayView 
         id: identity(source, ref.id),
         label: ref.id,
         revision: ref.revision,
-        href: exact ? found.href : undefined,
+        target: exact ? ref : undefined,
         status: exact
           ? 'included'
           : [state?.status ?? 'unavailable', state?.reason].filter(Boolean).join(' · '),
@@ -163,8 +156,8 @@ export function projectDay(bundles: Bundle[], scope: DayView['scope']): DayView 
       const d = obj(r.data)
       const hidden = d.status === 'withdrawn' || d.status === 'superseded' || d.is_deleted
       const e: Entry = {
+        status: hidden ? 'withheld' : 'active',
         anchor: anchor(slot, r.id),
-        href: recordMap.get(identity(slot, r.id))!.href,
         recordID: r.id,
         source: slot,
         kind: r.kind,
@@ -237,7 +230,7 @@ export function projectDay(bundles: Bundle[], scope: DayView['scope']): DayView 
             const t = at(c.time)
             return c.kind === 'dayflow.screenshots' && t && t >= start && t < end
           })
-          e.frameKeys = takeEvenly(selected, 12).map((c) => identity(slot, c.id))
+          e.frameKeys = selected.map((c) => identity(slot, c.id))
         } else if (e.track === 'observation') {
           e.attribution = slot.startsWith('dayflow/')
             ? 'Batch association only; no exact frame citations.'

@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Repository } from '@vandelay/ddb/repository'
 import { record, scope } from '@vandelay/ddb/model'
+import { openPublication } from '../src/reader'
 
 const root = mkdtempSync(join(tmpdir(), 'vandelay-web-snapshot-'))
 afterAll(() => rmSync(root, { recursive: true, force: true }))
-test('preparation reads pinned blobs despite dirty working files, and rejects tampered committed inventories', () => {
+test('preparation reads pinned blobs despite dirty working files, and rejects tampered committed inventories', async () => {
   const repo = new Repository(join(root, 'archive'))
   repo.init('sha256')
   repo.git('config', 'user.name', 'Fixture')
@@ -38,7 +39,8 @@ test('preparation reads pinned blobs despite dirty working files, and rejects ta
     Bun.spawnSync(
       [
         'bun',
-        new URL('../scripts/prepare.ts', import.meta.url).pathname,
+        new URL('../src/cli.ts', import.meta.url).pathname,
+        'build',
         '--repo',
         repo.root,
         '--commit',
@@ -48,17 +50,16 @@ test('preparation reads pinned blobs despite dirty working files, and rejects ta
       ],
       { cwd: root, stdout: 'pipe', stderr: 'pipe' },
     )
-  expect(run(commit).exitCode).toBe(0)
-  const prepared = JSON.parse(readFileSync(join(root, '.data/prepared.json'), 'utf8'))
-  expect(prepared.publication.commit).toBe(commit)
-  expect(prepared.publication.days[0].entries[0].title).toBe('Original title')
+  const built = run(commit)
+  if (built.exitCode) throw new Error(built.stderr.toString())
+  const read = async (path: string) => readFileSync(join(root, 'dist', path))
+  const prepared = await openPublication(read)
+  expect(prepared.manifest.commit).toBe(commit)
+  expect((await prepared.day(bounds.day))!.entries[0].title).toBe('Original title')
   repo.git('add', '.')
   repo.git('commit', '-m', 'Tampered inventory')
   const failed = run('HEAD')
   expect(failed.exitCode).not.toBe(0)
   expect(failed.stderr.toString()).toContain('Hash/size mismatch')
-  expect(
-    JSON.parse(readFileSync(join(root, '.data/prepared.json'), 'utf8')).publication
-      .commit,
-  ).toBe(commit)
+  expect((await openPublication(read)).manifest.commit).toBe(commit)
 }, 30000)

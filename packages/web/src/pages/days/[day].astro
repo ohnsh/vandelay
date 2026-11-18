@@ -1,6 +1,7 @@
 ---
 import Layout from '../../layouts/Layout.astro'
 import Entry from '../../components/Entry.astro'
+import MediaPlayer from '../../components/MediaPlayer'
 import { publication } from '../../lib/snapshot'
 import { withBase, type DayView, type Track } from '../../lib/model'
 export function getStaticPaths() {
@@ -47,6 +48,12 @@ const associated = day.entries.filter(e => ['day', 'unknown'].includes(e.time.mo
       <p class="muted">Sources remain separate accounts. Overlapping cards are not merged or summed as time worked.</p>
     </aside>
     <div class="day-content">
+      {day.timelapses.length > 0 && <section id="screen-timelapses"><h2>Screen timelapses</h2>
+        {day.timelapses.map(t => <details class="media-disclosure" data-source={t.source}>
+          <summary>{t.source}{t.stream && ` · ${t.stream}`} · {t.clip.frames.length} captures</summary>
+          <MediaPlayer clip={t.clip} timezone={day.scope.timezone} base={import.meta.env.BASE_URL} client:visible />
+        </details>)}
+      </section>}
       {associated.length > 0 && <section id="overview" data-entry-group><h2>Day overview</h2>{associated.map(entry => <Entry entry={entry} timezone={day.scope.timezone} />)}</section>}
       {sections.map(section => {
         const entries = day.entries.filter(e => e.track === section.track && !associated.includes(e))

@@ -1,0 +1,25 @@
+{
+  "name": "@vandelay/publish",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./model": "./src/model.ts",
+    "./reader": "./src/reader.ts",
+    "./project": "./src/project.ts"
+  },
+  "scripts": {
+    "build": "bun src/cli.ts build",
+    "upload": "bun src/cli.ts upload",
+    "check": "tsc --noEmit",
+    "test": "bun test test"
+  },
+  "dependencies": {
+    "aws4fetch": "^1.0.20",
+    "@vandelay/ddb": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0",
+    "typescript": "^5.9.3"
+  }
+}

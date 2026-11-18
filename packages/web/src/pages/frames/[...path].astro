@@ -23,7 +23,7 @@ const route = (n: number) => withBase(`/frames/${date}/${source}/${n}/`)
     <span>Page {page} of {pages}</span>
     {page < pages && <a href={route(page + 1)}>Next →</a>}
   </nav>
-  <p class="muted">Previews are prepared for cited Daycap samples and selected Dayflow contextual frames. Other capture metadata remains browsable.</p>
+  <p class="muted">Timelapses share the published capture chunks. Browsing posters are supplied for the first retained frame of each source object.</p>
   <div class="frame-grid">
     {frames.map(frame => <article id={frame.anchor} class="frame">
       <header><a href={`#${frame.anchor}`}>{timeLabel(frame.time, timezone)}</a><span>{frame.app}</span></header>

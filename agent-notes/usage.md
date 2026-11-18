@@ -1,6 +1,6 @@
 # Vandelay workspace
 
-- Updated: 2026-11-15. Source commit: `50bf174674c79e1075ebf71334812d1a26abb452` plus workspace migration.
+- Updated: 2026-11-17. Source baseline: `b9cc1657f716edc605262207cb87dd790e159762` plus publishing extraction.
 - Status: observation; maintained workspace usage reference.
 - Evidence: [workspace scripts](../package.json), [ddb CLI](../packages/ddb/src/cli.ts),
   [web scripts](../packages/web/scripts/), and [AutoRedact CLI](../packages/autoredact/src/cli.ts).
@@ -16,7 +16,8 @@ bun install --frozen-lockfile
 ```
 
 The workspace contains `@vandelay/ddb` (collection and archive CLI),
-`@vandelay/web` (static publication), and `@vandelay/autoredact` (scanning and review).
+`@vandelay/publish` (day JSON and shared media artifacts), `@vandelay/web`
+(static publication consumer), and `@vandelay/autoredact` (scanning and review).
 Cross-package imports use package exports and `workspace:*` dependencies.
 
 ```sh
@@ -73,11 +74,13 @@ scope, coverage, and decision semantics.
 
 ## Build and publish
 
-The web package builds calendar views, daily timelines, capture galleries,
-sample timelapses, and Pagefind search from a pinned data-repository commit:
+The publisher verifies a pinned archive commit and creates versioned day JSON,
+shared all-capture timelapse chunks, and a publication manifest. The web package
+consumes that output to build calendar views, timelines, galleries, and Pagefind:
 
 ```sh
-bun run --cwd packages/web build --commit HEAD
+bun run --cwd packages/publish build --commit HEAD
+bun run --cwd packages/web build --publication ../publish/dist --copy-media
 bun run --cwd packages/web preview --port 4324
 ```
 
@@ -85,7 +88,9 @@ bun run --cwd packages/web preview --port 4324
 are not publication inputs. Open **http://localhost:4324**. The static site is
 written to `packages/web/dist/`; building does not deploy it.
 
-Media preparation uses the external archive and FFmpeg; use `--media none` for a
-text-only build. Publish the complete output directory as one artifact. See
-[web usage](../packages/web/agent-notes/usage.md) for selection, media URLs,
-subpath hosting, verification, and provenance.
+Media preparation uses the external archive and FFmpeg; give the publisher
+`--media none` for text-only output, or `--stride 2`, `3`, or `4` to subsample.
+For production, upload publisher artifacts to R2 and build the web site with
+`--asset-base https://archive.example.com/` instead of `--copy-media`.
+See [publish usage](../packages/publish/agent-notes/usage.md) for uploads and
+[web usage](../packages/web/agent-notes/usage.md) for consumer builds and subpaths.

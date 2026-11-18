@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { record, scope, type ArchiveRecord, type RecordInput } from '@vandelay/ddb/model'
-import { anchor, identity, projectDay, type Bundle } from '../src/lib/project'
+import { anchor, identity, projectDay, type Bundle } from '../src/project'
 
 const bounds = scope('2026-11-01', 'America/Chicago') // 25-hour fall-back day
 const input = (
@@ -63,7 +63,7 @@ describe('publication semantics', () => {
     b.references = { entries: [{ target: ref, resolution: { status: 'evidence-only' } }] }
     const day = projectDay([b], bounds),
       e = day.entries[0]
-    expect(e.details[0].supports[0].href).toBeUndefined()
+    expect(e.details[0].supports[0].target).toBeUndefined()
     expect(e.details[0].supports[0].status).toBe('evidence-only')
     expect(e.frameKeys).toEqual([identity('daycap/fixture', ref.id)])
     expect(e.time.model).toBe('bounds')

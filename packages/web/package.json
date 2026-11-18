@@ -12,6 +12,7 @@
     "test:browser": "playwright test"
   },
   "dependencies": {
+    "@vandelay/publish": "workspace:*",
     "@vandelay/ddb": "workspace:*",
     "@astrojs/react": "^7.1.5",
     "astro": "7.4.1",
