@@ -51,6 +51,15 @@ export function validatePlayback(value: unknown): asserts value is PlaybackManif
     assert(object(r) && typeof r.url === 'string' && /^media\/[a-f0-9]{64}\.mp4$/.test(r.url) &&
       Number.isFinite(r.start) && Number.isFinite(r.end) && r.start >= 0 && r.end > r.start, 'media range')
   }
+  if (value.clock !== undefined) {
+    assert(Array.isArray(value.clock), 'capture clock')
+    let previous = -1
+    for (const point of value.clock) {
+      assert(object(point) && Number.isFinite(point.elapsed) && point.elapsed >= 0 &&
+        point.elapsed > previous && typeof point.at === 'string' && Number.isFinite(Date.parse(point.at)), 'capture minute')
+      previous = point.elapsed
+    }
+  }
 }
 export function validatePreview(value: unknown): asserts value is DailyPreview {
   assert(object(value) && value.schema === 'vandelay.publish.preview/v1' && object(value.scope) &&

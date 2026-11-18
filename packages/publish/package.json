@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./presentation": "./src/presentation.ts",
     "./model": "./src/model.ts",
     "./reader": "./src/reader.ts",
     "./project": "./src/project.ts"

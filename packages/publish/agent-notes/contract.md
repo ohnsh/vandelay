@@ -59,7 +59,10 @@ The referenced JSON contains `schema` and ordered `ranges` of `{ url, start, end
 `url` is an MP4 path relative to the **publication root**, not the JSON file.
 `[start, end)` is in media seconds. Adjacent captures in the same file coalesce;
 holes, repeats and chunk switches retain their playlist order. Frame identities,
-inspection timestamps and activity-specific clips remain in the full day projection.
+exact frame inspection and activity-specific clips remain in the full day projection.
+Playback maps may include `clock`: ordered `{elapsed, at}` minute changes, where
+`elapsed` is cumulative montage seconds and `at` is the observed capture timestamp.
+Display the most recent marker without interpolating wall time. Older maps omit it.
 
 ## Per-day projection
 

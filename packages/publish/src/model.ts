@@ -109,6 +109,8 @@ export interface Publication {
 export interface ObjectRef { path: string; sha256: string; bytes: number }
 export interface PlaybackManifest {
   schema: 'vandelay.publish.playback/v1'
+  /** Capture minute changes keyed by elapsed montage seconds; never interpolate across gaps. */
+  clock?: { elapsed: number; at: string }[]
   ranges: { url: string; start: number; end: number }[]
 }
 export interface DailyPreview {
