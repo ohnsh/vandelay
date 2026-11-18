@@ -6,6 +6,9 @@
 - Resolve discovery once per reader/build. Immutable manifest/day/media objects
   precede the mutable `current.json` pointer. Never silently overwrite immutable
   objects or delete old publications during upload.
+- Named discovery pointers live at `channels/<name>.json` and update independently.
+  All references remain publication-root-relative; channel names do not affect
+  immutable identity. Source selection precedes projection and media generation.
 - Citations identify exact historical revisions. Activity timelapses are separately
   labelled contextual selections of current captures within activity bounds.
 - Each retained source hash/frame index occurs in at most one video chunk per

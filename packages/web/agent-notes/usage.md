@@ -32,6 +32,14 @@ bun run preview --port 4324
 
 `--publication` defaults to `../publish/dist`. `--day YYYY-MM-DD` is repeatable.
 `--pin /path/to/current.json` pins a previously saved discovery pointer.
+`--channel NAME` follows `channels/NAME.json` at that same publication root;
+omit it to follow `current.json`. It works for local and HTTP publications and
+cannot be combined with `--pin`. For example:
+`bun run build --publication ../publish/dist --channel daycap --copy-media`.
+Asset URLs still resolve against the publication root, not the channel directory.
+Channel support implemented 2026-11-18 against
+`f5f28813e32d0197fce3f2eddda117d16e23a6eb` plus this change; evidence:
+`scripts/prepare.ts` and `test/build.test.ts`. Hosted deployment remains unverified.
 HTTP publications default to their own origin for assets. Local publications with
 media require either `--asset-base` or `--copy-media`. Hosted media is not downloaded
 or copied into the web deployment. Use `--copy-media` for offline/local demonstrations,

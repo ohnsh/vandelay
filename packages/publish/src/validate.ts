@@ -26,6 +26,10 @@ export function validateManifest(value: unknown): asserts value is PublicationMa
   assert(/^[a-f0-9]{64}$/.test(value.generatorDigest) && object(value.configuration) &&
     ['all', 'none'].includes(value.configuration.media) &&
     [1, 2, 3, 4].includes(value.configuration.captureStride), 'generator/configuration')
+  const sources = value.configuration.sources
+  assert(sources === undefined || (Array.isArray(sources) && sources.length > 0 &&
+    sources.every((s: unknown) => typeof s === 'string' && /^[a-z0-9][a-z0-9_-]*$/.test(s)) &&
+    sources.every((s: string, i: number) => i === 0 || sources[i - 1] < s)), 'source selection')
   assert(Array.isArray(value.days), 'day inventory')
   const dates = new Set<string>()
   for (const day of value.days) {

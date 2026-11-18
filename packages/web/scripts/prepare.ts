@@ -14,6 +14,7 @@ export async function prepare(args: string[]) {
     'copy-media': { type: 'boolean', default: false },
     day: { type: 'string', multiple: true },
     pin: { type: 'string' },
+    channel: { type: 'string' },
   } })
   const source = values.publication!
   const remote = /^https?:\/\//.test(source)
@@ -22,7 +23,11 @@ export async function prepare(args: string[]) {
   const read = root
     ? async (path: string) => readFileSync(safePath(root, path))
     : httpReader(source)
-  const reader = await openPublication(read, values.pin ? JSON.parse(readFileSync(values.pin, 'utf8')) : undefined)
+  if (values.pin && values.channel !== undefined) throw new Error('Choose --pin or --channel, not both')
+  const reader = await openPublication(read, {
+    channel: values.channel,
+    pinned: values.pin ? JSON.parse(readFileSync(values.pin, 'utf8')) : undefined,
+  })
   if (values.day?.some(date => !reader.manifest.days.some(d => d.scope.day === date)))
     throw new Error('Selected day is absent from publication')
   const assetBase = values['asset-base'] ?? (remote ? source : '')

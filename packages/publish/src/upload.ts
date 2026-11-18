@@ -3,6 +3,7 @@ import { AwsClient } from 'aws4fetch'
 import { digest, safePath } from '@vandelay/ddb/model'
 import { openPublication } from './reader'
 import type { ObjectRef } from './model'
+import { discoveryPath } from './discovery'
 
 export interface ObjectStore {
   head(path: string): Promise<{ etag: string; sha256?: string; bytes: number } | undefined>
@@ -52,9 +53,10 @@ export function r2Store(endpoint: string, bucket: string): ObjectStore {
 }
 
 /** Verify all local objects before writing; upload the discovery pointer only after dependencies. */
-export async function upload(root: string, store: ObjectStore) {
+export async function upload(root: string, store: ObjectStore, channel?: string) {
+  const pointer = discoveryPath(channel)
   const read = async (path: string) => readFileSync(safePath(root, path))
-  const currentBytes = await read('current.json')
+  const currentBytes = await read(pointer)
   const reader = await openPublication(read, JSON.parse(currentBytes.toString()))
   const assets = new Map<string, ObjectRef & { mediaType: string }>()
   const maps = new Map<string, ObjectRef>()
@@ -82,7 +84,7 @@ export async function upload(root: string, store: ObjectStore) {
     return bytes
   }
   for (const ref of objects) await verify(ref)
-  const previous = await store.head('current.json')
+  const previous = await store.head(pointer)
   let uploaded = 0
   for (const ref of objects) {
     const existing = await store.head(ref.path)
@@ -98,7 +100,7 @@ export async function upload(root: string, store: ObjectStore) {
     uploaded++
   }
   const hash = digest(currentBytes)
-  if (previous?.sha256 !== hash) await store.put('current.json', currentBytes, {
+  if (previous?.sha256 !== hash) await store.put(pointer, currentBytes, {
     type: 'application/json', cacheControl: 'public, max-age=0, must-revalidate',
     sha256: hash, condition: { etag: previous?.etag },
   })

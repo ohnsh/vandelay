@@ -7,6 +7,7 @@ import { projectDay, type Bundle } from './project'
 import type { Publication } from './model'
 import { prepareMedia } from './media'
 import { writePublication } from './store'
+import { discoveryPath } from './discovery'
 
 export async function prepare(args: string[]) {
   const { values } = parseArgs({
@@ -15,6 +16,8 @@ export async function prepare(args: string[]) {
       repo: { type: 'string', default: '../../data' },
       commit: { type: 'string', default: 'HEAD' },
       day: { type: 'string', multiple: true },
+      source: { type: 'string', multiple: true },
+      channel: { type: 'string' },
       'media-archive': { type: 'string', default: '~/.local/share/vandelay/media' },
       media: { type: 'string', default: 'all' },
       stride: { type: 'string', default: '1' },
@@ -24,6 +27,11 @@ export async function prepare(args: string[]) {
       'media-urls': { type: 'string' },
     },
   })
+  discoveryPath(values.channel)
+  const sources = values.source ? [...new Set(values.source)].sort() : undefined
+  if (sources?.some(s => !/^[a-z0-9][a-z0-9_-]*$/.test(s)))
+    throw new Error('--source must be a source type, such as daycap or dayflow')
+  const matchedSources = new Set<string>()
   if (!['none', 'all'].includes(values.media!))
     throw new Error('--media must be all or none')
   const stride = Number(values.stride)
@@ -48,11 +56,13 @@ export async function prepare(args: string[]) {
   const days = selected.map((date) => {
     console.log(`Verify and project ${date} @ ${commit.slice(0, 12)}`)
     const day = repo.verify(date, commit)
-    const bundles: Bundle[] = Object.values(day.sources).map((ref) => {
+    const bundles: Bundle[] = Object.values(day.sources).flatMap((ref) => {
       const manifest: Manifest = JSON.parse(blob(ref.path).toString())
+      if (sources && !sources.includes(manifest.source.type)) return []
+      matchedSources.add(manifest.source.type)
       const prefix = ref.path.slice(0, -'manifest.json'.length)
       const records = blob(`${prefix}records.jsonl`).toString().trim()
-      return {
+      return [{
         manifest,
         path: ref.path,
         sha256: ref.sha256,
@@ -62,10 +72,12 @@ export async function prepare(args: string[]) {
           manifest.source.type === 'daycap'
             ? JSON.parse(blob(`${prefix}references.json`).toString())
             : undefined,
-      }
+      }]
     })
     return projectDay(bundles, day.scope)
   })
+  if (sources?.some(source => !matchedSources.has(source)))
+    throw new Error(`Selected source type absent from selected days: ${sources.filter(s => !matchedSources.has(s)).join(', ')}`)
   const urls: Record<string, string> = values['media-urls']
     ? JSON.parse(readFileSync(expand(values['media-urls']), 'utf8'))
     : {}
@@ -102,13 +114,14 @@ export async function prepare(args: string[]) {
         .map(path => ({ path, sha256: digest(readFileSync(new URL(path, import.meta.url))) })),
       lock: digest(readFileSync(new URL('../../../bun.lock', import.meta.url))),
     })),
-    configuration: { media: values.media as 'all' | 'none', captureStride: stride },
+    configuration: { media: values.media as 'all' | 'none', captureStride: stride, ...(sources ? { sources } : {}) },
     inputDigest: digest(
       encode({
         commit,
         days: days.map((d) => ({ scope: d.scope, sources: d.sources })),
         media: values.media,
         stride,
+        ...(sources ? { sources } : {}),
         urls,
       }),
     ),
@@ -119,7 +132,7 @@ export async function prepare(args: string[]) {
     },
     days,
   }
-  const current = writePublication(resolve(values.out!), publication, assets, resolve(values.cache!))
+  const current = writePublication(resolve(values.out!), publication, assets, resolve(values.cache!), values.channel)
   console.log(
     `Prepared ${days.length} days, ${days.reduce((n, d) => n + d.entries.length, 0)} entries, ${assets.length} media assets`,
   )

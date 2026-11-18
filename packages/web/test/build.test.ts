@@ -50,6 +50,7 @@ test('build consumes only publication artifacts; day/activity playback shares ch
     }],
   }
   writePublication(output, publication, assets, cache)
+  const named = writePublication(output, { ...publication, commit: 'b'.repeat(40) }, assets, cache, 'preview')
   const app = join(root, 'app')
   mkdirSync(app)
   const packageRoot = new URL('../', import.meta.url).pathname
@@ -74,13 +75,14 @@ test('build consumes only publication artifacts; day/activity playback shares ch
   // Hosted mode does not require local media or copy videos into the deployment.
   rmSync(join(output, 'media'), { recursive: true })
   const hosted = Bun.spawn(['bun', join(packageRoot, 'scripts/build.ts'), '--publication', output,
-    '--asset-base', 'https://assets.example.test'], {
+    '--channel', 'preview', '--asset-base', 'https://assets.example.test'], {
     cwd: app, env: { ...process.env, VANDELAY_WEB_OUT: undefined }, stdout: 'pipe', stderr: 'pipe',
   })
   const [hostedOut, hostedErr, hostedStatus] = await Promise.all([
     new Response(hosted.stdout).text(), new Response(hosted.stderr).text(), hosted.exited,
   ])
   if (hostedStatus) throw new Error(`${hostedOut}\n${hostedErr}`)
+  expect(JSON.parse(readFileSync(join(app, 'dist/publication.json'), 'utf8')).publication).toEqual(named.manifest)
   expect(existsSync(join(app, 'dist/media'))).toBe(false)
   expect(readFileSync(join(app, 'dist/days/2026-11-14/index.html'), 'utf8')).toContain('https://assets.example.test/media/')
   if (!existsSync(chromium.executablePath())) {

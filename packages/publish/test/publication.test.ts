@@ -7,6 +7,8 @@ import type { Asset, Publication } from '../src/model'
 import { writePublication } from '../src/store'
 import { httpReader, openPublication } from '../src/reader'
 import { upload, type ObjectStore } from '../src/upload'
+import { discoveryPath } from '../src/discovery'
+import { validateManifest } from '../src/validate'
 
 const roots: string[] = []
 afterEach(() => roots.splice(0).forEach(r => rmSync(r, { recursive: true, force: true })))
@@ -80,6 +82,55 @@ function memoryStore() {
   }
   return { store, values, writes }
 }
+test('named channels share objects, resolve once, and update independently', async () => {
+  const { root, current, read } = setup(), remote = memoryStore()
+  const named = writePublication(root, fixture(), [], root, 'daycap')
+  expect(named).toEqual(current)
+  await upload(root, remote.store)
+  expect((await upload(root, remote.store, 'daycap')).uploaded).toBe(0)
+  expect(remote.writes.at(-1)).toBe('channels/daycap.json')
+  const reads: string[] = []
+  const reader = await openPublication(httpReader('https://example.test/archive/', (async (url: URL) => {
+    reads.push(url.pathname)
+    return new Response(await read(url.pathname.slice('/archive/'.length)))
+  }) as unknown as typeof fetch), { channel: 'daycap' })
+  const next = fixture(); next.commit = 'e'.repeat(40)
+  writePublication(root, next, [], root, 'daycap')
+  expect((await openPublication(read)).current).toEqual(current)
+  expect(reader.current).toEqual(named)
+  await reader.day('2026-11-14')
+  expect(reads.filter(p => p.includes('/channels/'))).toEqual(['/archive/channels/daycap.json'])
+  expect(reads.some(p => p.startsWith('/archive/days/'))).toBe(true)
+  const original = remote.values.get('channels/daycap.json')
+  const fail: ObjectStore = { ...remote.store, async put(path, body, options) {
+    if (path.startsWith('publications/')) throw new Error('interrupted')
+    return remote.store.put(path, body, options)
+  } }
+  await expect(upload(root, fail, 'daycap')).rejects.toThrow('interrupted')
+  expect(remote.values.get('channels/daycap.json')).toBe(original)
+  await upload(root, remote.store, 'daycap')
+  expect(remote.writes.at(-1)).toBe('channels/daycap.json')
+  expect(JSON.parse(new TextDecoder().decode(remote.values.get('current.json')!.body))).toEqual(current)
+  await expect(openPublication(read, { channel: 'missing' })).rejects.toThrow()
+  await expect(openPublication(read, { channel: 'daycap', pinned: current })).rejects.toThrow('not both')
+  const race: ObjectStore = { ...remote.store, async put(path, body, options) {
+    if (path === 'channels/daycap.json') remote.values.get(path)!.etag = 'competitor'
+    return remote.store.put(path, body, options)
+  } }
+  writePublication(root, fixture(), [], root, 'daycap')
+  await expect(upload(root, race, 'daycap')).rejects.toThrow('precondition')
+})
+test('channel names and source configuration are validated', () => {
+  for (const name of ['', '../outside', 'a/b', 'A', '.', 'a.json', 'a'.repeat(65)])
+    expect(() => discoveryPath(name)).toThrow('Channel')
+  expect(discoveryPath()).toBe('current.json')
+  expect(discoveryPath('daycap-preview_1')).toBe('channels/daycap-preview_1.json')
+  const manifest = { ...fixture(), days: [] }
+  for (const sources of [[], ['daycap', 'daycap'], ['dayflow', 'daycap'], ['../bad'], [1]]) {
+    expect(() => validateManifest({ ...manifest, configuration: { ...manifest.configuration, sources } })).toThrow('source selection')
+  }
+  expect(() => validateManifest({ ...manifest, configuration: { ...manifest.configuration, sources: ['daycap', 'dayflow'] } })).not.toThrow()
+})
 test('upload commits pointer last, retries without duplicate objects, and preserves old pointer on failure', async () => {
   const { root } = setup(), remote = memoryStore()
   expect((await upload(root, remote.store)).uploaded).toBe(3)

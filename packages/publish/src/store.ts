@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync, copyFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
+import { discoveryPath } from './discovery'
 import { digest, safePath } from '@vandelay/ddb/model'
 import { encodeJSON as encode } from './json'
 import type { Asset, Current, ObjectRef, Publication, PublicationManifest, PublishedDay } from './model'
@@ -7,7 +8,8 @@ import { dailyPreview } from './preview'
 import { validateDay, validateManifest, validatePlayback, validatePreview } from './validate'
 
 /** Append-only object writes; a completed generation becomes visible with one pointer replacement. */
-export function writePublication(root: string, publication: Publication, assets: Asset[], cache: string): Current {
+export function writePublication(root: string, publication: Publication, assets: Asset[], cache: string, channel?: string): Current {
+  const pointer = safePath(root, discoveryPath(channel))
   mkdirSync(root, { recursive: true })
   const put = (path: string, bytes: Buffer): ObjectRef => {
     const target = safePath(root, path), sha256 = digest(bytes)
@@ -67,7 +69,8 @@ export function writePublication(root: string, publication: Publication, assets:
     schema: 'vandelay.publish.current/v1',
     manifest: put(`publications/${digest(bytes)}/manifest.json`, bytes),
   }
-  writeFileSync(join(root, 'current.json.tmp'), encode(current))
-  renameSync(join(root, 'current.json.tmp'), join(root, 'current.json'))
+  mkdirSync(dirname(pointer), { recursive: true })
+  writeFileSync(`${pointer}.tmp`, encode(current))
+  renameSync(`${pointer}.tmp`, pointer)
   return current
 }

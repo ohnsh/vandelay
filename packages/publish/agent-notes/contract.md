@@ -17,6 +17,7 @@ fragment, or URI scheme. Consumers resolve these against a local root or HTTP ba
 | Object | Schema | Address |
 | --- | --- | --- |
 | Discovery pointer | `vandelay.publish.current/v1` | `current.json` |
+| Named discovery pointer | `vandelay.publish.current/v1` | `channels/<name>.json` |
 | Publication manifest | `vandelay.publish/v1` | `publications/<sha256>/manifest.json` |
 | Day projection | `vandelay.publish.day/v1` | `days/YYYY-MM-DD/<sha256>.json` |
 | Daily preview | `vandelay.publish.preview/v1` | `previews/YYYY-MM-DD/<sha256>.json` |
@@ -28,12 +29,29 @@ fragment, or URI scheme. Consumers resolve these against a local root or HTTP ba
 after every referenced object exists. Stale discovery remains a coherent older
 generation; clients resolve it once per operation.
 
+Named channels update independently with the same pointer-last and conditional
+upload guarantees as the default. Names are 1–64 lowercase letters, digits,
+hyphens or underscores, beginning with a letter or digit. References in every
+pointer and manifest remain relative to the publication root, not `channels/`.
+Names are not included in immutable publication identity. There is no channel
+fallback or mutable channel listing.
+
+Channel/source-selection extension: implemented 2026-11-18 against
+`f5f28813e32d0197fce3f2eddda117d16e23a6eb` plus this change. Evidence:
+`src/{discovery,prepare,reader,store,upload,validate}.ts` and
+`test/{publication,snapshot}.test.ts`. Live hosted behavior remains unverified.
+
 Manifest fields:
 
 - `commit`: full source archive commit.
 - `generator`, `generatorDigest`: publisher name/version and digest of its source
   files plus the workspace lockfile.
 - `configuration`: `media` (`all` or `none`) and `captureStride` (1–4).
+- Optional `configuration.sources`: nonempty, sorted, unique source-type names.
+  Omission means all sources, including for older v1 manifests. Filtering precedes
+  projection and media generation; the normalized selection contributes to
+  `inputDigest`. Each requested type must exist in the selected dates. Dates with
+  no matching sources remain as empty days.
 - `inputDigest`: digest of pinned input selection and configuration.
 - `verification`: archive, signature, and timestamp verification states.
 - `days`: sorted `{ scope, object: ObjectRef, preview?: ObjectRef }` entries. Scope contains `day`,

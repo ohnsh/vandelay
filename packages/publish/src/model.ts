@@ -101,7 +101,7 @@ export interface Publication {
   commit: string
   generator: string
   generatorDigest: string
-  configuration: { media: 'all' | 'none'; captureStride: number }
+  configuration: { media: 'all' | 'none'; captureStride: number; sources?: string[] }
   inputDigest: string
   verification: { archive: string; signature: string; timestamp: string }
   days: DayView[]

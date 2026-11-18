@@ -15,11 +15,12 @@ if (command === 'build') {
 } else if (command === 'upload') {
   const { values } = parseArgs({ args, options: {
     from: { type: 'string', default: 'dist' },
+    channel: { type: 'string' },
     endpoint: { type: 'string', default: process.env.S3_ENDPOINT },
     bucket: { type: 'string', default: process.env.S3_BUCKET },
   } })
   if (!values.endpoint || !values.bucket) throw new Error('Supply --endpoint and --bucket (or S3_ENDPOINT/S3_BUCKET)')
-  console.log(JSON.stringify(await upload(resolve(values.from!), r2Store(values.endpoint, values.bucket)), null, 2))
+  console.log(JSON.stringify(await upload(resolve(values.from!), r2Store(values.endpoint, values.bucket), values.channel), null, 2))
 } else {
-  throw new Error('Usage: bun src/cli.ts build [--repo PATH --commit REF --out PATH --stride 1..4] | upload [--from PATH --endpoint URL --bucket NAME]')
+  throw new Error('Usage: bun src/cli.ts build [--repo PATH --commit REF --out PATH --stride 1..4 --source TYPE --channel NAME] | upload [--from PATH --endpoint URL --bucket NAME --channel NAME]')
 }

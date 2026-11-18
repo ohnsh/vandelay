@@ -1,4 +1,5 @@
 import type { Current, ObjectRef, PublicationManifest, PublishedDay } from './model'
+import { discoveryPath } from './discovery'
 import { objectPath, validateCurrent, validateDay, validateManifest, validatePlayback, validatePlaybackRef, validatePreview } from './validate'
 
 /** No filesystem, Bun, or Node dependency: usable in Astro builds and Workers SSR. */
@@ -21,8 +22,11 @@ async function verified(read: ReadObject, ref: ObjectRef): Promise<unknown> {
   return JSON.parse(new TextDecoder().decode(bytes))
 }
 /** Resolve discovery exactly once. Subsequent day reads are pinned to this immutable manifest. */
-export async function openPublication(read: ReadObject, pinned?: Current) {
-  const current: unknown = pinned ?? JSON.parse(new TextDecoder().decode(await read('current.json')))
+export async function openPublication(read: ReadObject, selection?: Current | { channel?: string; pinned?: Current }) {
+  const options = selection && 'schema' in selection ? { pinned: selection } : selection
+  if (options?.pinned && options.channel !== undefined) throw new Error('Choose a pin or a channel, not both')
+  const path = discoveryPath(options?.channel)
+  const current: unknown = options?.pinned ?? JSON.parse(new TextDecoder().decode(await read(path)))
   validateCurrent(current)
   const manifest = await verified(read, current.manifest)
   validateManifest(manifest)
